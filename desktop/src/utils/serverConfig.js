@@ -1,0 +1,96 @@
+// Server Configuration Utility for Desktop App
+// Stores and retrieves central server IP address
+
+const SERVER_CONFIG_KEY = 'serverConfig';
+
+// Default configuration
+// IMPORTANT: Update this before building for production distribution
+// Option 1: Set your production server here for all clients
+// Option 2: Leave as localhost and let users configure on first launch
+const DEFAULT_CONFIG = {
+  host: '147.93.108.205',  // VPS Production Server
+  port: '5001',            // Backend API port
+  protocol: 'http'         // HTTP (use 'https' if SSL is configured)
+};
+
+// Production example (uncomment and update for production builds):
+// const DEFAULT_CONFIG = {
+//   host: 'api.yourdomain.com',  // Your production domain or IP
+//   port: '443',                  // 443 for HTTPS, 80 for HTTP
+//   protocol: 'https'             // Use HTTPS in production
+// };
+
+export const getServerConfig = () => {
+  try {
+    const stored = localStorage.getItem(SERVER_CONFIG_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (error) {
+    console.error('Error reading server config:', error);
+  }
+  return DEFAULT_CONFIG;
+};
+
+export const setServerConfig = (config) => {
+  try {
+    localStorage.setItem(SERVER_CONFIG_KEY, JSON.stringify(config));
+    return true;
+  } catch (error) {
+    console.error('Error saving server config:', error);
+    return false;
+  }
+};
+
+export const getServerUrl = () => {
+  const config = getServerConfig();
+  return `${config.protocol}://${config.host}:${config.port}/api`;
+};
+
+export const isServerConfigured = () => {
+  const config = getServerConfig();
+  return config.host !== 'localhost' || localStorage.getItem(SERVER_CONFIG_KEY) !== null;
+};
+
+export const resetServerConfig = () => {
+  try {
+    localStorage.removeItem(SERVER_CONFIG_KEY);
+    return true;
+  } catch (error) {
+    console.error('Error resetting server config:', error);
+    return false;
+  }
+};
+
+// Test server connection
+export const testServerConnection = async (host, port, protocol = 'http') => {
+  try {
+    const response = await fetch(`${protocol}://${host}:${port}/api/health`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      timeout: 5000,
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      return {
+        success: true,
+        message: 'Connection successful',
+        data
+      };
+    } else {
+      return {
+        success: false,
+        message: `Server returned status ${response.status}`
+      };
+    }
+  } catch (error) {
+    return {
+      success: false,
+      message: error.message || 'Connection failed',
+      error: error.code
+    };
+  }
+};
