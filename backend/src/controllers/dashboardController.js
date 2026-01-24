@@ -1,0 +1,404 @@
+/**
+ * Dashboard Controller
+ * Sprint 4: Main Dashboard with Analytics
+ * Company: Ummahtechinnovations.com
+ */
+
+const db = require('../config/database');
+
+/**
+ * Get overall dashboard statistics
+ * Returns comprehensive real-time statistics for dashboard display
+ */
+exports.getDashboardStats = async (req, res) => {
+  try {
+    // Use the comprehensive dashboard view
+    const [stats] = await db.query('SELECT * FROM v_dashboard_stats');
+    
+    // Get additional real-time metrics
+    const dashboardStats = {
+      // Products - show total (more meaningful than just active)
+      total_products: stats[0].total_products,
+      active_products: stats[0].active_products,
+      low_stock_products: stats[0].low_stock_count,
+      
+      // Orders
+      total_orders: stats[0].total_orders,
+      pending_orders: stats[0].pending_orders,
+      completed_orders: stats[0].completed_orders,
+      
+      // Shops
+      total_shops: stats[0].total_shops,
+      active_shops: stats[0].active_shops,
+      
+      // Salesmen
+      total_salesmen: stats[0].total_salesmen,
+      active_salesmen: stats[0].active_salesmen,
+      
+      // Routes
+      total_routes: stats[0].total_routes,
+      active_routes: stats[0].active_routes,
+      
+      // Warehouses
+      total_warehouses: stats[0].total_warehouses,
+      active_warehouses: stats[0].active_warehouses,
+      
+      // Deliveries
+      total_deliveries: stats[0].total_deliveries,
+      pending_deliveries: stats[0].pending_deliveries,
+      in_transit_deliveries: stats[0].in_transit_deliveries,
+      delivered_deliveries: stats[0].delivered_deliveries,
+      
+      // Invoices
+      total_invoices: stats[0].total_invoices,
+      unpaid_invoices: stats[0].unpaid_invoices,
+      paid_invoices: stats[0].paid_invoices,
+      partial_invoices: stats[0].partial_invoices,
+      
+      // Load Sheets
+      total_load_sheets: stats[0].total_load_sheets,
+      draft_load_sheets: stats[0].draft_load_sheets,
+      loaded_load_sheets: stats[0].loaded_load_sheets,
+      in_transit_load_sheets: stats[0].in_transit_load_sheets,
+      
+      // Suppliers
+      total_suppliers: stats[0].total_suppliers,
+      active_suppliers: stats[0].active_suppliers,
+      
+      // Stock metrics
+      total_reserved_stock: parseFloat(stats[0].total_reserved_stock || 0),
+      fully_reserved_count: stats[0].fully_reserved_count
+    };
+
+    res.json({
+      success: true,
+      data: dashboardStats
+    });
+  } catch (error) {
+    console.error('Error fetching dashboard stats:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch dashboard statistics',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Get recent orders (placeholder for future Orders module)
+ */
+exports.getRecentOrders = async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 10;
+
+    // TODO: Implement when Orders module is created
+    // For now, return empty array
+    res.json({
+      success: true,
+      data: [],
+      message: 'Orders module not yet implemented'
+    });
+  } catch (error) {
+    console.error('Error fetching recent orders:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch recent orders',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Get low stock products
+ */
+exports.getLowStockProducts = async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 10;
+
+    const [products] = await db.query(
+      `SELECT 
+        p.id,
+        p.product_code,
+        p.product_name,
+        p.stock_quantity,
+        p.reorder_level,
+        p.unit_price,
+        p.category,
+        s.supplier_name,
+        (p.reorder_level - p.stock_quantity) as shortage
+       FROM products p
+       LEFT JOIN suppliers s ON s.id = p.supplier_id
+       WHERE p.stock_quantity <= p.reorder_level
+       AND p.is_active = 1
+       ORDER BY shortage DESC
+       LIMIT ?`,
+      [limit]
+    );
+
+    res.json({
+      success: true,
+      data: products
+    });
+  } catch (error) {
+    console.error('Error fetching low stock products:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch low stock products',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Get top performing salesmen (placeholder for future Orders module)
+ */
+exports.getTopSalesmen = async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 10;
+    const period = req.query.period || 'month'; // day, week, month, year
+
+    // For now, return salesmen with their assigned routes count
+    const [salesmen] = await db.query(
+      `SELECT 
+        s.id,
+        s.salesman_code,
+        s.full_name,
+        s.city,
+        s.monthly_target,
+        s.commission_percentage,
+        COUNT(r.id) as assigned_routes,
+        (SELECT COUNT(*) FROM shops sh WHERE sh.route_id IN (SELECT id FROM routes WHERE salesman_id = s.id)) as total_shops
+       FROM salesmen s
+       LEFT JOIN routes r ON r.salesman_id = s.id AND r.is_active = 1
+       WHERE s.is_active = 1
+       GROUP BY s.id
+       ORDER BY assigned_routes DESC, total_shops DESC
+       LIMIT ?`,
+      [limit]
+    );
+
+    res.json({
+      success: true,
+      data: salesmen,
+      note: 'Full sales metrics will be available when Orders module is implemented'
+    });
+  } catch (error) {
+    console.error('Error fetching top salesmen:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch top salesmen',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Get top selling products (placeholder for future Orders module)
+ */
+exports.getTopProducts = async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 10;
+    const period = req.query.period || 'month'; // day, week, month, year
+
+    // TODO: Implement when Orders module is created
+    // For now, return products with highest stock
+    const [products] = await db.query(
+      `SELECT 
+        p.id,
+        p.product_code,
+        p.product_name,
+        p.stock_quantity,
+        p.unit_price,
+        p.category,
+        s.supplier_name
+       FROM products p
+       LEFT JOIN suppliers s ON s.id = p.supplier_id
+       WHERE p.is_active = 1
+       ORDER BY p.stock_quantity DESC
+       LIMIT ?`,
+      [limit]
+    );
+
+    res.json({
+      success: true,
+      data: products,
+      note: 'Sales data will be available when Orders module is implemented'
+    });
+  } catch (error) {
+    console.error('Error fetching top products:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch top products',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Get revenue summary (placeholder for future Orders module)
+ */
+exports.getRevenueSummary = async (req, res) => {
+  try {
+    const period = req.query.period || 'month'; // day, week, month, year
+
+    // TODO: Implement when Orders module is created
+    res.json({
+      success: true,
+      data: {
+        period,
+        total_revenue: 0,
+        total_orders: 0,
+        average_order_value: 0,
+        total_commission: 0
+      },
+      message: 'Orders module not yet implemented'
+    });
+  } catch (error) {
+    console.error('Error fetching revenue summary:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch revenue summary',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Get targets progress for all salesmen
+ */
+exports.getTargetsProgress = async (req, res) => {
+  try {
+    // Get all active salesmen with their targets
+    const [salesmen] = await db.query(
+      `SELECT 
+        s.id,
+        s.salesman_code,
+        s.full_name,
+        s.monthly_target,
+        s.commission_percentage,
+        COUNT(r.id) as assigned_routes,
+        (SELECT COUNT(*) FROM shops sh WHERE sh.route_id IN (SELECT id FROM routes WHERE salesman_id = s.id AND is_active = 1)) as total_shops
+       FROM salesmen s
+       LEFT JOIN routes r ON r.salesman_id = s.id AND r.is_active = 1
+       WHERE s.is_active = 1
+       GROUP BY s.id
+       ORDER BY s.full_name ASC`
+    );
+
+    // TODO: Add actual sales when Orders module is implemented
+    const targetsProgress = salesmen.map(salesman => ({
+      salesman_id: salesman.id,
+      salesman_code: salesman.salesman_code,
+      full_name: salesman.full_name,
+      monthly_target: parseFloat(salesman.monthly_target),
+      achieved_amount: 0, // Will be calculated from orders
+      achievement_percentage: 0,
+      commission_percentage: parseFloat(salesman.commission_percentage),
+      estimated_commission: 0,
+      assigned_routes: salesman.assigned_routes,
+      total_shops: salesman.total_shops
+    }));
+
+    res.json({
+      success: true,
+      data: targetsProgress,
+      note: 'Achievement metrics will be available when Orders module is implemented'
+    });
+  } catch (error) {
+    console.error('Error fetching targets progress:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch targets progress',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Get sales trends (placeholder for future Orders module)
+ */
+exports.getSalesTrends = async (req, res) => {
+  try {
+    const period = req.query.period || 'week'; // day, week, month, year
+    const limit = parseInt(req.query.limit) || 30; // Number of data points
+
+    // TODO: Implement when Orders module is created
+    res.json({
+      success: true,
+      data: [],
+      message: 'Orders module not yet implemented'
+    });
+  } catch (error) {
+    console.error('Error fetching sales trends:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch sales trends',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Get city-wise distribution statistics
+ */
+exports.getCityStats = async (req, res) => {
+  try {
+    const [cityStats] = await db.query(
+      `SELECT 
+        city,
+        COUNT(DISTINCT s.id) as salesmen_count,
+        COUNT(DISTINCT r.id) as routes_count,
+        COUNT(DISTINCT sh.id) as shops_count,
+        SUM(s.monthly_target) as total_targets
+       FROM salesmen s
+       LEFT JOIN routes r ON r.salesman_id = s.id AND r.is_active = 1
+       LEFT JOIN shops sh ON sh.route_id = r.id AND sh.is_active = 1
+       WHERE s.is_active = 1
+       GROUP BY city
+       ORDER BY salesmen_count DESC, shops_count DESC`
+    );
+
+    res.json({
+      success: true,
+      data: cityStats
+    });
+  } catch (error) {
+    console.error('Error fetching city stats:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch city statistics',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Get quick stats for dashboard cards
+ */
+exports.getQuickStats = async (req, res) => {
+  try {
+    // Use dashboard view
+    const [viewStats] = await db.query('SELECT * FROM v_dashboard_stats');
+    const stats = viewStats[0];
+
+    // Get additional statistics
+    const [activeUsers] = await db.query('SELECT COUNT(*) as count FROM users WHERE is_active = 1');
+    const [totalCategories] = await db.query('SELECT COUNT(DISTINCT category) as count FROM products WHERE is_active = 1 AND category IS NOT NULL');
+
+    res.json({
+      success: true,
+      data: {
+        ...stats,
+        total_users: activeUsers[0].count,
+        total_categories: totalCategories[0].count
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching quick stats:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch quick statistics',
+      error: error.message
+    });
+  }
+};
