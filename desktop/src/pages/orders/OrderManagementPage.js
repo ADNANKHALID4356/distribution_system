@@ -144,7 +144,7 @@ const OrderManagementPage = () => {
       let errorMsg = 'Unknown error occurred';
       
       if (!error.response) {
-        errorMsg = 'Cannot connect to server. Please check if backend is running on http://localhost:5000';
+        errorMsg = 'Cannot connect to server. Please check your server configuration in Settings';
       } else if (error.response.status === 401) {
         errorMsg = 'Authentication failed. Please login again.';
         // Optionally redirect to login

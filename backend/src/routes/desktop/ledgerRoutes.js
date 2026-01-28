@@ -137,4 +137,30 @@ router.get('/payments/shop/:shopId',
   ledgerController.getShopPayments
 );
 
+// ============================================================================
+// LEDGER MANAGEMENT ROUTES (Admin Operations)
+// ============================================================================
+
+/**
+ * @route   POST /api/desktop/ledger/shop/:shopId/recalculate
+ * @desc    Recalculate all ledger balances for a shop (fixes inconsistencies)
+ * @access  Admin, Manager
+ */
+router.post('/shop/:shopId/recalculate', 
+  authorize('Admin', 'Manager'), 
+  ledgerController.recalculateBalances
+);
+
+/**
+ * @route   DELETE /api/desktop/ledger/shop/:shopId/history
+ * @desc    Clear transaction history for a shop (Admin only)
+ * @access  Admin only
+ * @body    retain_opening_balance (boolean) - if true, creates opening balance entry
+ * @note    This only deletes ledger entries, NOT invoices or payments
+ */
+router.delete('/shop/:shopId/history', 
+  authorize('Admin'), 
+  ledgerController.clearTransactionHistory
+);
+
 module.exports = router;

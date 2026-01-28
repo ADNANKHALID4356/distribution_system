@@ -12,12 +12,10 @@ class Warehouse {
       let query = `
         SELECT 
           w.*,
-          COUNT(DISTINCT ws.product_id) as total_products,
-          SUM(p.stock_quantity) as total_stock_quantity,
-          SUM(p.stock_quantity) as total_available_quantity
+          COALESCE((SELECT COUNT(DISTINCT product_id) FROM warehouse_stock WHERE warehouse_id = w.id), 0) as total_products,
+          COALESCE((SELECT SUM(quantity) FROM warehouse_stock WHERE warehouse_id = w.id), 0) as total_stock_quantity,
+          COALESCE((SELECT SUM(quantity - COALESCE(reserved_quantity, 0)) FROM warehouse_stock WHERE warehouse_id = w.id), 0) as total_available_quantity
         FROM warehouses w
-        LEFT JOIN warehouse_stock ws ON w.id = ws.warehouse_id
-        LEFT JOIN products p ON ws.product_id = p.id
       `;
       
       const conditions = [];
@@ -43,7 +41,7 @@ class Warehouse {
         query += ' WHERE ' + conditions.join(' AND ');
       }
 
-      query += ' GROUP BY w.id ORDER BY w.is_default DESC, w.name ASC';
+      query += ' ORDER BY w.is_default DESC, w.name ASC';
 
       const [rows] = await db.query(query, params);
       return rows;
@@ -61,14 +59,11 @@ class Warehouse {
       const [warehouses] = await db.query(`
         SELECT 
           w.*,
-          COUNT(DISTINCT ws.product_id) as total_products,
-          SUM(p.stock_quantity) as total_stock_quantity,
-          SUM(p.stock_quantity) as total_available_quantity
+          COALESCE((SELECT COUNT(DISTINCT product_id) FROM warehouse_stock WHERE warehouse_id = w.id), 0) as total_products,
+          COALESCE((SELECT SUM(quantity) FROM warehouse_stock WHERE warehouse_id = w.id), 0) as total_stock_quantity,
+          COALESCE((SELECT SUM(quantity - COALESCE(reserved_quantity, 0)) FROM warehouse_stock WHERE warehouse_id = w.id), 0) as total_available_quantity
         FROM warehouses w
-        LEFT JOIN warehouse_stock ws ON w.id = ws.warehouse_id
-        LEFT JOIN products p ON ws.product_id = p.id
         WHERE w.id = ?
-        GROUP BY w.id
       `, [id]);
 
       if (warehouses.length === 0) {
@@ -301,19 +296,23 @@ class Warehouse {
           ws.warehouse_id,
           ws.product_id,
           
-          -- REAL PRODUCT STOCK (Primary Display)
-          p.stock_quantity as quantity,
-          p.stock_quantity as available_quantity,
+          -- Warehouse stock quantities
+          ws.quantity,
+          COALESCE(ws.reserved_quantity, 0) as reserved_quantity,
+          ws.quantity - COALESCE(ws.reserved_quantity, 0) as available_quantity,
           
-          -- Warehouse-specific tracking (kept for reference)
-          ws.quantity as warehouse_quantity,
-          ws.reserved_quantity as warehouse_reserved_quantity,
-          ws.minimum_stock,
-          ws.maximum_stock,
-          ws.rack_number,
-          ws.bin_location,
+          -- Stock level thresholds
+          COALESCE(ws.min_stock_level, 0) as min_stock_level,
+          COALESCE(ws.max_stock_level, 0) as max_stock_level,
+          COALESCE(ws.reorder_point, 0) as reorder_point,
+          
+          -- Location & tracking
+          ws.location_in_warehouse,
+          ws.batch_number,
+          ws.expiry_date,
+          ws.notes as stock_notes,
           ws.last_updated,
-          ws.updated_by,
+          ws.created_by,
           
           -- Product details
           p.product_name,
@@ -327,7 +326,9 @@ class Warehouse {
           p.purchase_price,
           p.barcode,
           p.description,
-          p.is_active
+          p.is_active,
+          p.stock_quantity as global_stock,
+          p.reorder_level as product_reorder_level
         FROM warehouse_stock ws
         INNER JOIN products p ON ws.product_id = p.id
         WHERE ws.warehouse_id = ?
@@ -336,8 +337,8 @@ class Warehouse {
       const params = [warehouseId];
 
       if (filters.low_stock) {
-        // Use actual product stock for low stock filter
-        query += ' AND p.stock_quantity <= ws.minimum_stock';
+        // Low stock: quantity below min level or reorder point
+        query += ' AND (ws.quantity <= COALESCE(ws.min_stock_level, 0) OR ws.quantity <= COALESCE(ws.reorder_point, 0))';
       }
 
       if (filters.search) {
@@ -346,16 +347,25 @@ class Warehouse {
         params.push(searchTerm, searchTerm);
       }
 
+      if (filters.category) {
+        query += ' AND p.category = ?';
+        params.push(filters.category);
+      }
+
       query += ' ORDER BY p.product_name ASC';
 
       const [rows] = await db.query(query, params);
       
-      // Calculate totals based on REAL product stock
+      // Calculate totals
       const totals = {
         totalProducts: rows.length,
         totalQuantity: rows.reduce((sum, row) => sum + parseFloat(row.quantity || 0), 0),
         totalReserved: rows.reduce((sum, row) => sum + parseFloat(row.reserved_quantity || 0), 0),
-        totalAvailable: rows.reduce((sum, row) => sum + parseFloat(row.available_quantity || 0), 0)
+        totalAvailable: rows.reduce((sum, row) => sum + parseFloat(row.available_quantity || 0), 0),
+        lowStockCount: rows.filter(row => 
+          row.quantity <= (row.min_stock_level || 0) || 
+          row.quantity <= (row.reorder_point || 0)
+        ).length
       };
 
       return {
@@ -383,14 +393,14 @@ class Warehouse {
         // Update existing
         await db.query(`
           UPDATE warehouse_stock 
-          SET quantity = ?, updated_by = ?, last_updated = NOW()
+          SET quantity = ?, created_by = ?, last_updated = datetime('now')
           WHERE warehouse_id = ? AND product_id = ?
         `, [quantity, userId, warehouseId, productId]);
       } else {
         // Insert new
         await db.query(`
-          INSERT INTO warehouse_stock (warehouse_id, product_id, quantity, updated_by)
-          VALUES (?, ?, ?, ?)
+          INSERT INTO warehouse_stock (warehouse_id, product_id, quantity, created_by, created_at, last_updated)
+          VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
         `, [warehouseId, productId, quantity, userId]);
       }
 
@@ -503,20 +513,19 @@ class Warehouse {
         throw new Error('Product already exists in this warehouse. Use update instead.');
       }
 
-      // Insert new warehouse_stock record
+      // Insert new warehouse_stock record (using correct SQLite column names)
       await db.query(`
         INSERT INTO warehouse_stock (
-          warehouse_id, product_id, quantity, minimum_stock, maximum_stock,
-          rack_number, bin_location, updated_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          warehouse_id, product_id, quantity, min_stock_level, max_stock_level,
+          location_in_warehouse, created_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
       `, [
         warehouseId,
         product_id,
         quantity || 0,
         minimum_stock || 0,
         maximum_stock || 0,
-        rack_number || null,
-        bin_location || null,
+        rack_number || bin_location || null,
         userId
       ]);
 
@@ -558,20 +567,19 @@ class Warehouse {
             continue;
           }
 
-          // Insert new warehouse_stock record
+          // Insert new warehouse_stock record (using correct SQLite column names)
           await connection.query(`
             INSERT INTO warehouse_stock (
-              warehouse_id, product_id, quantity, minimum_stock, maximum_stock,
-              rack_number, bin_location, updated_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+              warehouse_id, product_id, quantity, min_stock_level, max_stock_level,
+              location_in_warehouse, created_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
           `, [
             warehouseId,
             product.product_id,
             product.quantity || 0,
             product.minimum_stock || 0,
             product.maximum_stock || 0,
-            product.rack_number || null,
-            product.bin_location || null,
+            product.rack_number || product.bin_location || null,
             userId
           ]);
 

@@ -590,6 +590,159 @@ const Product = {
     const [result] = await db.query('SELECT COUNT(*) as count FROM products');
     const count = result[0].count + 1;
     return `PROD${count.toString().padStart(6, '0')}`;
+  },
+
+  /**
+   * Get warehouse stock breakdown for a product
+   * Shows stock levels in each warehouse
+   */
+  async getWarehouseStock(productId) {
+    try {
+      const [rows] = await db.query(`
+        SELECT 
+          ws.warehouse_id,
+          w.name as warehouse_name,
+          w.code as warehouse_code,
+          w.status as warehouse_status,
+          ws.quantity,
+          COALESCE(ws.reserved_quantity, 0) as reserved_quantity,
+          ws.quantity - COALESCE(ws.reserved_quantity, 0) as available_quantity,
+          COALESCE(ws.min_stock_level, 0) as min_stock_level,
+          COALESCE(ws.max_stock_level, 0) as max_stock_level,
+          ws.location_in_warehouse,
+          ws.last_updated
+        FROM warehouse_stock ws
+        INNER JOIN warehouses w ON ws.warehouse_id = w.id
+        WHERE ws.product_id = ?
+        ORDER BY w.is_default DESC, w.name ASC
+      `, [productId]);
+      
+      return rows;
+    } catch (error) {
+      console.error('❌ Error fetching warehouse stock for product:', error);
+      return [];
+    }
+  },
+
+  /**
+   * Get products with warehouse stock summary for listing
+   */
+  async findAllWithWarehouseStock(options = {}) {
+    const { 
+      page = 1, 
+      limit = 20, 
+      search = '', 
+      category = '', 
+      brand = '', 
+      stock_level = '', 
+      is_active = null,
+      orderBy = 'created_at',
+      orderDirection = 'DESC'
+    } = options;
+    
+    const offset = (page - 1) * limit;
+    
+    // Main query with warehouse stock aggregation
+    let query = `
+      SELECT 
+        p.*,
+        s.supplier_name,
+        s.supplier_code,
+        s.phone AS supplier_phone,
+        CASE 
+          WHEN p.stock_quantity = 0 THEN 'OUT_OF_STOCK'
+          WHEN p.stock_quantity <= p.reorder_level THEN 'LOW_STOCK'
+          ELSE 'IN_STOCK'
+        END AS stock_status,
+        COALESCE((SELECT COUNT(*) FROM warehouse_stock ws WHERE ws.product_id = p.id AND ws.quantity > 0), 0) as warehouses_with_stock,
+        COALESCE((SELECT SUM(ws.quantity) FROM warehouse_stock ws WHERE ws.product_id = p.id), 0) as total_warehouse_stock
+      FROM products p
+      LEFT JOIN suppliers s ON p.supplier_id = s.id
+      WHERE 1=1
+    `;
+    
+    const params = [];
+    const countParams = [];
+    
+    // Build WHERE clause (shared for both queries)
+    let whereClause = '';
+    
+    if (search) {
+      whereClause += ` AND (p.product_name LIKE ? OR p.product_code LIKE ? OR p.barcode LIKE ?)`;
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+      countParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    }
+    
+    if (category) {
+      whereClause += ` AND p.category = ?`;
+      params.push(category);
+      countParams.push(category);
+    }
+    
+    if (brand) {
+      whereClause += ` AND p.brand = ?`;
+      params.push(brand);
+      countParams.push(brand);
+    }
+    
+    // Stock level filtering
+    if (stock_level) {
+      if (stock_level === 'out_of_stock') {
+        whereClause += ` AND p.stock_quantity = 0`;
+      } else if (stock_level === 'low_stock') {
+        whereClause += ` AND p.stock_quantity > 0 AND p.stock_quantity <= p.reorder_level`;
+      } else if (stock_level === 'in_stock') {
+        whereClause += ` AND p.stock_quantity > p.reorder_level`;
+      }
+    }
+    
+    if (is_active !== null) {
+      whereClause += ` AND p.is_active = ?`;
+      params.push(is_active);
+      countParams.push(is_active);
+    }
+    
+    // Add WHERE clause to main query
+    query += whereClause;
+    
+    // Validate and sanitize ORDER BY
+    const validOrderColumns = ['created_at', 'product_name', 'product_code', 'unit_price', 'stock_quantity'];
+    const validOrderDirections = ['ASC', 'DESC'];
+    const safeOrderBy = validOrderColumns.includes(orderBy) ? orderBy : 'created_at';
+    const safeOrderDirection = validOrderDirections.includes(orderDirection.toUpperCase()) ? orderDirection.toUpperCase() : 'DESC';
+    
+    query += ` ORDER BY p.${safeOrderBy} ${safeOrderDirection} LIMIT ? OFFSET ?`;
+    params.push(limit, offset);
+    
+    // Optimized count query - no joins needed
+    const countQuery = `SELECT COUNT(*) as total FROM products p WHERE 1=1${whereClause}`;
+    
+    // Execute both queries in parallel for better performance
+    const [productsResult, countResult] = await Promise.all([
+      db.query(query, params),
+      db.query(countQuery, countParams)
+    ]);
+    
+    const [products] = productsResult;
+    const [countRow] = countResult;
+    
+    // Convert DECIMAL strings to numbers
+    const convertedProducts = products.map(convertProductNumbers);
+    
+    const total = countRow[0].total;
+    const totalPages = Math.ceil(total / limit);
+    
+    return {
+      products: convertedProducts,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1
+      }
+    };
   }
 };
 

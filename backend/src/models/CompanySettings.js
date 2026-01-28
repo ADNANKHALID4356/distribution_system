@@ -13,59 +13,63 @@ class CompanySettings {
         SELECT 
           id,
           company_name,
-          company_address,
-          company_city,
-          company_state,
-          company_country,
-          company_postal_code,
-          company_phone,
-          company_mobile,
-          company_email,
-          company_website,
-          company_tax_number,
-          company_registration_number,
-          company_ntn,
-          company_gst_number,
-          bank_name,
-          bank_account_title,
-          bank_account_number,
-          bank_branch,
-          bank_iban,
-          bank_swift_code,
-          bank_name_2,
-          bank_account_title_2,
-          bank_account_number_2,
-          bank_branch_2,
-          bank_iban_2,
-          company_logo_url,
-          company_slogan,
-          invoice_header_text,
-          invoice_footer_text,
-          currency_symbol,
-          currency_code,
-          default_tax_percentage,
-          default_credit_days,
+          address,
+          contact,
+          email,
+          website,
+          tax_number,
+          currency,
+          logo_path,
           created_at,
-          updated_at,
-          updated_by
+          updated_at
         FROM company_settings
         LIMIT 1
       `);
 
       // Return first row or default values if not found
-      if (rows.length > 0) {
-        return rows[0];
+      if (rows && rows.length > 0) {
+        // Map to expected frontend format
+        const settings = rows[0];
+        return {
+          id: settings.id,
+          company_name: settings.company_name,
+          company_address: settings.address,
+          address: settings.address,
+          contact: settings.contact,
+          company_phone: settings.contact,
+          email: settings.email,
+          company_email: settings.email,
+          website: settings.website,
+          company_website: settings.website,
+          tax_number: settings.tax_number,
+          company_tax_number: settings.tax_number,
+          currency: settings.currency,
+          currency_code: settings.currency,
+          currency_symbol: settings.currency === 'PKR' ? 'Rs.' : settings.currency,
+          logo_path: settings.logo_path,
+          company_logo_url: settings.logo_path,
+          created_at: settings.created_at,
+          updated_at: settings.updated_at
+        };
       } else {
         // Return default settings if table is empty
         return {
           company_name: 'Ummahtechinnovations Distribution',
           company_address: 'Office Address, City, Pakistan',
-          company_city: 'Lahore',
-          company_country: 'Pakistan',
+          address: 'Office Address, City, Pakistan',
+          contact: '+92-XXX-XXXXXXX',
           company_phone: '+92-XXX-XXXXXXX',
+          email: 'info@ummahtechinnovations.com',
           company_email: 'info@ummahtechinnovations.com',
-          currency_symbol: 'Rs.',
+          website: '',
+          company_website: '',
+          tax_number: '',
+          company_tax_number: '',
+          currency: 'PKR',
           currency_code: 'PKR',
+          currency_symbol: 'Rs.',
+          logo_path: '',
+          company_logo_url: '',
           default_tax_percentage: 0.00,
           default_credit_days: 30
         };
@@ -84,7 +88,26 @@ class CompanySettings {
       // Check if settings row exists
       const [existing] = await db.query('SELECT id FROM company_settings LIMIT 1');
 
-      if (existing.length > 0) {
+      // Map frontend field names to database column names
+      const fieldMapping = {
+        'company_name': 'company_name',
+        'company_address': 'address',
+        'address': 'address',
+        'company_phone': 'contact',
+        'contact': 'contact',
+        'company_email': 'email',
+        'email': 'email',
+        'company_website': 'website',
+        'website': 'website',
+        'company_tax_number': 'tax_number',
+        'tax_number': 'tax_number',
+        'currency': 'currency',
+        'currency_code': 'currency',
+        'company_logo_url': 'logo_path',
+        'logo_path': 'logo_path'
+      };
+
+      if (existing && existing.length > 0) {
         // Update existing settings
         const settingsId = existing[0].id;
         
@@ -92,28 +115,19 @@ class CompanySettings {
         const updateValues = [];
 
         // Build dynamic UPDATE query based on provided fields
-        const allowedFields = [
-          'company_name', 'company_address', 'company_city', 'company_state',
-          'company_country', 'company_postal_code', 'company_phone', 'company_mobile',
-          'company_email', 'company_website', 'company_tax_number', 'company_registration_number',
-          'company_ntn', 'company_gst_number', 'bank_name', 'bank_account_title',
-          'bank_account_number', 'bank_branch', 'bank_iban', 'bank_swift_code',
-          'bank_name_2', 'bank_account_title_2', 'bank_account_number_2',
-          'bank_branch_2', 'bank_iban_2', 'company_logo_url', 'company_slogan',
-          'invoice_header_text', 'invoice_footer_text', 'currency_symbol',
-          'currency_code', 'default_tax_percentage', 'default_credit_days'
-        ];
-
-        allowedFields.forEach(field => {
-          if (settingsData.hasOwnProperty(field)) {
-            updateFields.push(`${field} = ?`);
-            updateValues.push(settingsData[field]);
+        Object.keys(fieldMapping).forEach(inputField => {
+          if (settingsData.hasOwnProperty(inputField)) {
+            const dbColumn = fieldMapping[inputField];
+            // Avoid duplicates
+            if (!updateFields.some(f => f.startsWith(dbColumn))) {
+              updateFields.push(`${dbColumn} = ?`);
+              updateValues.push(settingsData[inputField]);
+            }
           }
         });
 
         if (updateFields.length > 0) {
-          updateFields.push('updated_by = ?');
-          updateValues.push(userId);
+          updateFields.push('updated_at = datetime("now")');
           updateValues.push(settingsId);
 
           const updateQuery = `
@@ -128,40 +142,32 @@ class CompanySettings {
         return await this.getSettings();
       } else {
         // Insert new settings row (first time setup)
-        const insertFields = [];
-        const insertPlaceholders = [];
-        const insertValues = [];
-
-        const allowedFields = [
-          'company_name', 'company_address', 'company_city', 'company_state',
-          'company_country', 'company_postal_code', 'company_phone', 'company_mobile',
-          'company_email', 'company_website', 'company_tax_number', 'company_registration_number',
-          'company_ntn', 'company_gst_number', 'bank_name', 'bank_account_title',
-          'bank_account_number', 'bank_branch', 'bank_iban', 'bank_swift_code',
-          'bank_name_2', 'bank_account_title_2', 'bank_account_number_2',
-          'bank_branch_2', 'bank_iban_2', 'company_logo_url', 'company_slogan',
-          'invoice_header_text', 'invoice_footer_text', 'currency_symbol',
-          'currency_code', 'default_tax_percentage', 'default_credit_days'
-        ];
-
-        allowedFields.forEach(field => {
-          if (settingsData.hasOwnProperty(field)) {
-            insertFields.push(field);
-            insertPlaceholders.push('?');
-            insertValues.push(settingsData[field]);
-          }
-        });
-
-        insertFields.push('updated_by');
-        insertPlaceholders.push('?');
-        insertValues.push(userId);
+        const insertData = {
+          company_name: settingsData.company_name || 'Company Name',
+          address: settingsData.company_address || settingsData.address || '',
+          contact: settingsData.company_phone || settingsData.contact || '',
+          email: settingsData.company_email || settingsData.email || '',
+          website: settingsData.company_website || settingsData.website || '',
+          tax_number: settingsData.company_tax_number || settingsData.tax_number || '',
+          currency: settingsData.currency || settingsData.currency_code || 'PKR',
+          logo_path: settingsData.company_logo_url || settingsData.logo_path || ''
+        };
 
         const insertQuery = `
-          INSERT INTO company_settings (${insertFields.join(', ')})
-          VALUES (${insertPlaceholders.join(', ')})
+          INSERT INTO company_settings (company_name, address, contact, email, website, tax_number, currency, logo_path)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
-        await db.query(insertQuery, insertValues);
+        await db.query(insertQuery, [
+          insertData.company_name,
+          insertData.address,
+          insertData.contact,
+          insertData.email,
+          insertData.website,
+          insertData.tax_number,
+          insertData.currency,
+          insertData.logo_path
+        ]);
         return await this.getSettings();
       }
     } catch (error) {
@@ -178,16 +184,11 @@ class CompanySettings {
       const settings = await this.getSettings();
       return {
         company_name: settings.company_name,
-        company_address: settings.company_address,
-        company_city: settings.company_city,
-        company_phone: settings.company_phone,
-        company_email: settings.company_email,
-        company_tax_number: settings.company_tax_number,
-        company_logo_url: settings.company_logo_url,
-        bank_name: settings.bank_name,
-        bank_account_title: settings.bank_account_title,
-        bank_account_number: settings.bank_account_number,
-        bank_iban: settings.bank_iban
+        company_address: settings.company_address || settings.address,
+        company_phone: settings.company_phone || settings.contact,
+        company_email: settings.company_email || settings.email,
+        company_tax_number: settings.company_tax_number || settings.tax_number,
+        company_logo_url: settings.company_logo_url || settings.logo_path
       };
     } catch (error) {
       console.error('❌ Error fetching invoice info:', error);

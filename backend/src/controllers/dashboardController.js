@@ -9,66 +9,232 @@ const db = require('../config/database');
 /**
  * Get overall dashboard statistics
  * Returns comprehensive real-time statistics for dashboard display
+ * Supports both MySQL (with views) and SQLite (direct queries)
  */
 exports.getDashboardStats = async (req, res) => {
   try {
-    // Use the comprehensive dashboard view
-    const [stats] = await db.query('SELECT * FROM v_dashboard_stats');
+    console.log('🔵 Dashboard Stats API called');
+    const useSQLite = process.env.USE_SQLITE === 'true';
+    console.log('🔵 USE_SQLITE:', useSQLite);
+    let dashboardStats;
     
-    // Get additional real-time metrics
-    const dashboardStats = {
-      // Products - show total (more meaningful than just active)
-      total_products: stats[0].total_products,
-      active_products: stats[0].active_products,
-      low_stock_products: stats[0].low_stock_count,
+    if (useSQLite) {
+      // SQLite: Direct queries instead of views
+      console.log('📊 Dashboard: Using SQLite queries');
       
-      // Orders
-      total_orders: stats[0].total_orders,
-      pending_orders: stats[0].pending_orders,
-      completed_orders: stats[0].completed_orders,
+      // Get product stats
+      const [productRows] = await db.query(`
+        SELECT 
+          COUNT(*) as total_products,
+          SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) as active_products,
+          SUM(CASE WHEN stock_quantity <= reorder_level AND stock_quantity > 0 THEN 1 ELSE 0 END) as low_stock_count,
+          SUM(CASE WHEN stock_quantity = 0 THEN 1 ELSE 0 END) as out_of_stock_count,
+          SUM(stock_quantity) as total_stock_quantity,
+          SUM(stock_quantity * unit_price) as total_inventory_value
+        FROM products
+      `);
+      const productStats = productRows[0] || {};
+      console.log('📦 Product stats:', productStats);
       
-      // Shops
-      total_shops: stats[0].total_shops,
-      active_shops: stats[0].active_shops,
+      // Get order stats
+      const [orderRows] = await db.query(`
+        SELECT 
+          COUNT(*) as total_orders,
+          SUM(CASE WHEN status IN ('placed', 'pending', 'processing') THEN 1 ELSE 0 END) as pending_orders,
+          SUM(CASE WHEN status IN ('completed', 'delivered') THEN 1 ELSE 0 END) as completed_orders,
+          SUM(net_amount) as total_order_value
+        FROM orders
+      `);
+      const orderStats = orderRows[0] || {};
+      console.log('📋 Order stats:', orderStats);
       
-      // Salesmen
-      total_salesmen: stats[0].total_salesmen,
-      active_salesmen: stats[0].active_salesmen,
+      // Get shop stats
+      const [shopRows] = await db.query(`
+        SELECT 
+          COUNT(*) as total_shops,
+          SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) as active_shops
+        FROM shops
+      `);
+      const shopStats = shopRows[0] || {};
+      console.log('🏪 Shop stats:', shopStats);
       
-      // Routes
-      total_routes: stats[0].total_routes,
-      active_routes: stats[0].active_routes,
+      // Get salesman stats
+      const [salesmanRows] = await db.query(`
+        SELECT 
+          COUNT(*) as total_salesmen,
+          SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) as active_salesmen
+        FROM salesmen
+      `);
+      const salesmanStats = salesmanRows[0] || {};
+      console.log('👤 Salesman stats:', salesmanStats);
       
-      // Warehouses
-      total_warehouses: stats[0].total_warehouses,
-      active_warehouses: stats[0].active_warehouses,
+      // Get warehouse stats
+      const [warehouseRows] = await db.query(`
+        SELECT 
+          COUNT(*) as total_warehouses,
+          SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active_warehouses
+        FROM warehouses
+      `);
+      const warehouseStats = warehouseRows[0] || {};
       
-      // Deliveries
-      total_deliveries: stats[0].total_deliveries,
-      pending_deliveries: stats[0].pending_deliveries,
-      in_transit_deliveries: stats[0].in_transit_deliveries,
-      delivered_deliveries: stats[0].delivered_deliveries,
+      // Get warehouse stock total
+      const [stockRows] = await db.query(`
+        SELECT 
+          COALESCE(SUM(quantity), 0) as total_warehouse_stock,
+          COALESCE(SUM(reserved_quantity), 0) as total_reserved_stock
+        FROM warehouse_stock
+      `);
+      const warehouseStockTotal = stockRows[0] || {};
       
-      // Invoices
-      total_invoices: stats[0].total_invoices,
-      unpaid_invoices: stats[0].unpaid_invoices,
-      paid_invoices: stats[0].paid_invoices,
-      partial_invoices: stats[0].partial_invoices,
+      // Get delivery stats
+      const [deliveryRows] = await db.query(`
+        SELECT 
+          COUNT(*) as total_deliveries,
+          SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_deliveries,
+          SUM(CASE WHEN status = 'in_transit' THEN 1 ELSE 0 END) as in_transit_deliveries,
+          SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) as delivered_deliveries
+        FROM deliveries
+      `);
+      const deliveryStats = deliveryRows[0] || {};
+      console.log('🚚 Delivery stats:', deliveryStats);
       
-      // Load Sheets
-      total_load_sheets: stats[0].total_load_sheets,
-      draft_load_sheets: stats[0].draft_load_sheets,
-      loaded_load_sheets: stats[0].loaded_load_sheets,
-      in_transit_load_sheets: stats[0].in_transit_load_sheets,
+      // Get invoice stats
+      const [invoiceRows] = await db.query(`
+        SELECT 
+          COUNT(*) as total_invoices,
+          SUM(CASE WHEN status = 'unpaid' THEN 1 ELSE 0 END) as unpaid_invoices,
+          SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid_invoices,
+          SUM(CASE WHEN status = 'partial' THEN 1 ELSE 0 END) as partial_invoices
+        FROM invoices
+      `);
+      const invoiceStats = invoiceRows[0] || {};
+      console.log('🧾 Invoice stats:', invoiceStats);
       
-      // Suppliers
-      total_suppliers: stats[0].total_suppliers,
-      active_suppliers: stats[0].active_suppliers,
+      dashboardStats = {
+        // Products - with inventory metrics
+        total_products: productStats.total_products || 0,
+        active_products: productStats.active_products || 0,
+        low_stock_products: productStats.low_stock_count || 0,
+        out_of_stock_products: productStats.out_of_stock_count || 0,
+        total_stock_quantity: parseFloat(productStats.total_stock_quantity || 0),
+        total_inventory_value: parseFloat(productStats.total_inventory_value || 0),
+        
+        // Orders
+        total_orders: orderStats.total_orders || 0,
+        pending_orders: orderStats.pending_orders || 0,
+        completed_orders: orderStats.completed_orders || 0,
+        total_order_value: parseFloat(orderStats.total_order_value || 0),
+        
+        // Shops
+        total_shops: shopStats.total_shops || 0,
+        active_shops: shopStats.active_shops || 0,
+        
+        // Salesmen
+        total_salesmen: salesmanStats.total_salesmen || 0,
+        active_salesmen: salesmanStats.active_salesmen || 0,
+        
+        // Routes (may not exist in SQLite)
+        total_routes: 0,
+        active_routes: 0,
+        
+        // Warehouses - with stock totals
+        total_warehouses: warehouseStats.total_warehouses || 0,
+        active_warehouses: warehouseStats.active_warehouses || 0,
+        total_warehouse_stock: parseFloat(warehouseStockTotal.total_warehouse_stock || 0),
+        total_reserved_stock: parseFloat(warehouseStockTotal.total_reserved_stock || 0),
+        
+        // Deliveries
+        total_deliveries: deliveryStats.total_deliveries || 0,
+        pending_deliveries: deliveryStats.pending_deliveries || 0,
+        in_transit_deliveries: deliveryStats.in_transit_deliveries || 0,
+        delivered_deliveries: deliveryStats.delivered_deliveries || 0,
+        
+        // Invoices
+        total_invoices: invoiceStats.total_invoices || 0,
+        unpaid_invoices: invoiceStats.unpaid_invoices || 0,
+        paid_invoices: invoiceStats.paid_invoices || 0,
+        partial_invoices: invoiceStats.partial_invoices || 0,
+        
+        // Load Sheets (may not exist in SQLite)
+        total_load_sheets: 0,
+        draft_load_sheets: 0,
+        loaded_load_sheets: 0,
+        in_transit_load_sheets: 0,
+        
+        // Suppliers (may not exist in SQLite)
+        total_suppliers: 0,
+        active_suppliers: 0,
+        
+        fully_reserved_count: 0
+      };
       
-      // Stock metrics
-      total_reserved_stock: parseFloat(stats[0].total_reserved_stock || 0),
-      fully_reserved_count: stats[0].fully_reserved_count
-    };
+      console.log('📊 Final dashboard stats:', dashboardStats);
+      
+    } else {
+      // MySQL: Use the comprehensive dashboard view
+      const [stats] = await db.query('SELECT * FROM v_dashboard_stats');
+      
+      dashboardStats = {
+        // Products - show total (more meaningful than just active)
+        total_products: stats[0].total_products,
+        active_products: stats[0].active_products,
+        low_stock_products: stats[0].low_stock_count,
+        
+        // Orders
+        total_orders: stats[0].total_orders,
+        pending_orders: stats[0].pending_orders,
+        completed_orders: stats[0].completed_orders,
+        
+        // Shops
+        total_shops: stats[0].total_shops,
+        active_shops: stats[0].active_shops,
+        
+        // Salesmen
+        total_salesmen: stats[0].total_salesmen,
+        active_salesmen: stats[0].active_salesmen,
+        
+        // Routes
+        total_routes: stats[0].total_routes,
+        active_routes: stats[0].active_routes,
+        
+        // Warehouses
+        total_warehouses: stats[0].total_warehouses,
+        active_warehouses: stats[0].active_warehouses,
+        
+        // Deliveries
+        total_deliveries: stats[0].total_deliveries,
+        pending_deliveries: stats[0].pending_deliveries,
+        in_transit_deliveries: stats[0].in_transit_deliveries,
+        delivered_deliveries: stats[0].delivered_deliveries,
+        
+        // Invoices
+        total_invoices: stats[0].total_invoices,
+        unpaid_invoices: stats[0].unpaid_invoices,
+        paid_invoices: stats[0].paid_invoices,
+        partial_invoices: stats[0].partial_invoices,
+        
+        // Load Sheets
+        total_load_sheets: stats[0].total_load_sheets,
+        draft_load_sheets: stats[0].draft_load_sheets,
+        loaded_load_sheets: stats[0].loaded_load_sheets,
+        in_transit_load_sheets: stats[0].in_transit_load_sheets,
+        
+        // Suppliers
+        total_suppliers: stats[0].total_suppliers,
+        active_suppliers: stats[0].active_suppliers,
+        
+        // Stock metrics
+        total_reserved_stock: parseFloat(stats[0].total_reserved_stock || 0),
+        fully_reserved_count: stats[0].fully_reserved_count
+      };
+    }
+
+    // Set cache-control headers to prevent caching of stats
+    res.set({
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    });
 
     res.json({
       success: true,

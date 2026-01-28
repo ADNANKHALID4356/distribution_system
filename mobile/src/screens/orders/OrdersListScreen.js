@@ -60,7 +60,6 @@ const OrdersListScreen = ({ navigation }) => {
 
   useEffect(() => {
     loadSalesmanId();
-    loadOrders();
     
     // Sprint 9: Setup sync listener for progress updates
     const syncListener = (status) => {
@@ -99,19 +98,47 @@ const OrdersListScreen = ({ navigation }) => {
   const loadSalesmanId = async () => {
     try {
       const userStr = await AsyncStorage.getItem('user');
+      console.log('🔍 [ORDERS LIST] Loading salesman ID from AsyncStorage...');
       if (userStr) {
         const user = JSON.parse(userStr);
-        setSalesmanId(user.id);
+        console.log(`✅ [ORDERS LIST] User found:`, { id: user.id, username: user.username, role_id: user.role_id, salesman_id: user.salesman_id });
+        const id = user.salesman_id || user.id;
+        console.log(`✅ [ORDERS LIST] Setting salesmanId to: ${id}`);
+        setSalesmanId(id);
+      } else {
+        console.warn('⚠️ [ORDERS LIST] No user found in AsyncStorage');
       }
     } catch (error) {
-      // Silent fail - user info will be loaded on next app start
+      console.error('❌ [ORDERS LIST] Error loading salesman ID:', error.message);
     }
   };
 
+  // Load orders when salesmanId changes
+  useEffect(() => {
+    if (salesmanId) {
+      loadOrders();
+    }
+  }, [salesmanId]);
+
   const loadOrders = async () => {
     try {
+      if (!salesmanId) {
+        console.warn('⚠️ [ORDERS LIST] Cannot load orders - salesmanId not set');
+        return;
+      }
+      
+      console.log(`🔍 [ORDERS LIST] Loading orders for salesman: ${salesmanId}`);
       setLoading(true);
       const allOrders = await dbHelper.getAllOrders(salesmanId);
+      console.log(`✅ [ORDERS LIST] Loaded ${allOrders.length} orders from database`);
+      console.log('📋 [ORDERS LIST] Orders:', JSON.stringify(allOrders.map(o => ({
+        id: o.id,
+        order_number: o.order_number,
+        status: o.status,
+        synced: o.synced,
+        shop_name: o.shop_name,
+        total_amount: o.total_amount
+      })), null, 2));
       setOrders(allOrders);
       
       // Calculate stats
@@ -121,10 +148,13 @@ const OrdersListScreen = ({ navigation }) => {
         pending: allOrders.filter(o => o.synced === 0 && o.status !== 'draft').length,
       };
       setSyncStats(stats);
+      console.log(`📊 [ORDERS LIST] Stats - Total: ${stats.total}, Synced: ${stats.synced}, Pending: ${stats.pending}`);
     } catch (error) {
+      console.error('❌ [ORDERS LIST] Error loading orders:', error.message);
+      console.error('❌ [ORDERS LIST] Error stack:', error.stack);
       Alert.alert(
         'Loading Issue',
-        'Unable to load orders. Please try again.',
+        `Unable to load orders: ${error.message}. Please try again.`,
         [{ text: 'OK' }]
       );
     } finally {

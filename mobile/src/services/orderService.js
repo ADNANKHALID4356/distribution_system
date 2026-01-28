@@ -8,6 +8,7 @@
 
 import dbHelper from '../database/dbHelper';
 import api from './api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ORDER_STATUS } from '../database/schema';
 
 class OrderService {
@@ -200,14 +201,19 @@ class OrderService {
 
   /**
    * Sync orders to backend
-   * @param {number} salesmanId - Current salesman's ID for filtering (multi-tenancy)
+   * @param {number} salesmanId - Current salesman's ID for filtering (multi-tenancy) - REQUIRED
    */
-  async syncOrdersToBackend(salesmanId = null) {
+  async syncOrdersToBackend(salesmanId) {
     try {
       console.log('\n🔍 [MOBILE SYNC] ========== Starting Order Sync ==========');
-      if (salesmanId) {
-        console.log(`🔍 [MOBILE SYNC] Filtering by Salesman ID: ${salesmanId}`);
+      
+      // CRITICAL: Validate salesmanId is provided
+      if (!salesmanId) {
+        console.error('❌ [MOBILE SYNC] SECURITY VIOLATION: salesmanId is required for order sync');
+        throw new Error('salesmanId is required for order sync');
       }
+      
+      console.log(`🔍 [MOBILE SYNC] Filtering by Salesman ID: ${salesmanId}`);
       
       // Get unsynced orders for this salesman only
       const orders = await dbHelper.getUnsyncedOrders(salesmanId);
@@ -253,9 +259,19 @@ class OrderService {
           
           console.log('🔍 [MOBILE SYNC] Order data prepared:', JSON.stringify(orderData, null, 2));
           console.log('🔍 [MOBILE SYNC] Sending POST request to /shared/orders...');
+          console.log('🔍 [MOBILE SYNC] API Base URL:', api.defaults.baseURL);
+          console.log('🔍 [MOBILE SYNC] Request timeout:', api.defaults.timeout, 'ms');
           
-          // Send to backend
+          // Get token for debugging
+          const token = await AsyncStorage.getItem('token');
+          console.log('🔍 [MOBILE SYNC] Has token:', !!token, token ? `(${token.substring(0, 20)}...)` : '');
+          
+          // Send to backend with detailed logging
+          console.log('💥 [MOBILE SYNC] Making API request NOW...');
+          const startTime = Date.now();
           const response = await api.post('/shared/orders', orderData);
+          const elapsed = Date.now() - startTime;
+          console.log(`⏱️ [MOBILE SYNC] Request completed in ${elapsed}ms`);
           
           console.log('🔍 [MOBILE SYNC] Backend response status:', response.status);
           console.log('🔍 [MOBILE SYNC] Backend response data:', JSON.stringify(response.data, null, 2));
@@ -275,6 +291,16 @@ class OrderService {
           }
         } catch (error) {
           // Sync error - will be retried automatically
+          console.error(`❌ [MOBILE SYNC] Order ${order.order_number} sync failed:`, error.message);
+          console.error('❌ [MOBILE SYNC] Error details:', {
+            name: error.name,
+            message: error.message,
+            code: error.code,
+            response: error.response ? {
+              status: error.response.status,
+              data: error.response.data
+            } : 'No response'
+          });
           errors.push({
             order_number: order.order_number,
             error: error.message
@@ -283,6 +309,9 @@ class OrderService {
       }
       
       console.log(`\n✅ [MOBILE SYNC] Synced ${syncedCount}/${orders.length} orders`);
+      if (errors.length > 0) {
+        console.error('❌ [MOBILE SYNC] Sync errors:', JSON.stringify(errors, null, 2));
+      }
       console.log('🔍 [MOBILE SYNC] ========== Sync Complete ==========\n');
       
       return {

@@ -266,39 +266,65 @@ const InvoiceDetailModal = ({ invoiceId, onClose, onPaymentRecorded }) => {
           {/* Payment History */}
           {invoice.payments && invoice.payments.length > 0 && (
             <div className="mb-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-3">Payment History</h3>
+              <h3 className="text-lg font-semibold text-gray-800 mb-3">
+                <span className="mr-2">💳</span>Payment History
+              </h3>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200 border border-gray-200">
-                  <thead className="bg-gray-50">
+                  <thead className="bg-green-50">
                     <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Receipt #</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Amount</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Method</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reference</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Received By</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Notes</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {invoice.payments.map((payment, index) => (
-                      <tr key={index}>
+                      <tr key={index} className="hover:bg-green-50">
+                        <td className="px-4 py-3 text-sm font-mono text-blue-600">
+                          {payment.receipt_number || '-'}
+                        </td>
                         <td className="px-4 py-3 text-sm text-gray-900">
                           {invoiceService.formatDate(payment.payment_date)}
                         </td>
-                        <td className="px-4 py-3 text-sm font-medium text-green-600">
-                          {invoiceService.formatCurrency(payment.payment_amount)}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-900 capitalize">
-                          {payment.payment_method?.replace('_', ' ')}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-500">
-                          {payment.reference_number || '-'}
+                        <td className="px-4 py-3 text-sm font-bold text-green-600 text-right">
+                          {invoiceService.formatCurrency(payment.payment_amount || payment.amount)}
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-900">
-                          {payment.received_by || '-'}
+                          <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                            payment.payment_method === 'cash' ? 'bg-green-100 text-green-800' :
+                            payment.payment_method === 'bank_transfer' || payment.payment_method === 'bank' ? 'bg-blue-100 text-blue-800' :
+                            payment.payment_method === 'cheque' ? 'bg-yellow-100 text-yellow-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            {payment.payment_method?.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-500">
+                          {payment.reference_number || payment.cheque_number || '-'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate" title={payment.notes || ''}>
+                          {payment.notes || '-'}
                         </td>
                       </tr>
                     ))}
                   </tbody>
+                  <tfoot className="bg-green-100">
+                    <tr>
+                      <td colSpan="2" className="px-4 py-3 text-sm font-semibold text-gray-700 text-right">
+                        Total Paid:
+                      </td>
+                      <td className="px-4 py-3 text-sm font-bold text-green-700 text-right">
+                        {invoiceService.formatCurrency(
+                          invoice.payments.reduce((sum, p) => sum + parseFloat(p.payment_amount || p.amount || 0), 0)
+                        )}
+                      </td>
+                      <td colSpan="3"></td>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             </div>

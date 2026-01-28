@@ -2,11 +2,31 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const SERVER_CONFIG_KEY = '@distribution_server_config';
 
-// Default configuration - LOCALHOST for local development & testing
+// Default configuration - VPS Production Server
+// ============================================
+// SINGLE SOURCE OF TRUTH FOR SERVER URL
+// ============================================
+// To change the server for all new installs, update ONLY this DEFAULT_CONFIG
+// For local development, change to your computer's IP address
+// To find your IP: Run 'ipconfig' (Windows) or 'ifconfig' (Mac/Linux)
 const DEFAULT_CONFIG = {
-  host: 'localhost',
-  port: '5000',
+  host: '147.93.108.205', // VPS Production Server
+  port: '5001',
   protocol: 'http'
+};
+
+/**
+ * Get default server URL (synchronous - for initial load)
+ */
+export const getDefaultServerUrl = () => {
+  return `${DEFAULT_CONFIG.protocol}://${DEFAULT_CONFIG.host}:${DEFAULT_CONFIG.port}/api`;
+};
+
+/**
+ * Get default config (synchronous)
+ */
+export const getDefaultConfig = () => {
+  return { ...DEFAULT_CONFIG };
 };
 
 /**

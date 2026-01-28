@@ -387,17 +387,8 @@ class Invoice {
         await connection.query(itemInsertQuery, itemParams);
       }
 
-      await connection.commit();
-      connection.release();
-
-      console.log(`✅ [INVOICE MODEL] Professional invoice ${invoiceId} created with ${items.length} items`);
-      console.log(`   📄 Invoice Number: ${invoice_number}`);
-      console.log(`   🏪 Shop: ${customerInfo.shop_name}`);
-      console.log(`   👤 Salesman: ${salesmanInfo.salesman_name}`);
-      console.log(`   💰 Net Amount: ${net_amount}`);
-      console.log(`   💳 Total Payable: ${total_payable}`);
-      
-      // 🆕 Create ledger entry for this invoice
+      // 🆕 Create ledger entry using the SAME connection (no nested transaction)
+      // This ensures atomicity - if ledger fails, invoice creation also fails
       try {
         console.log('📒 [INVOICE MODEL] Creating shop ledger entry...');
         await ShopLedger.createEntry({
@@ -415,12 +406,23 @@ class Invoice {
           created_by: invoiceData.created_by || null,
           created_by_name: invoiceData.prepared_by || salesmanInfo.salesman_name,
           is_manual: 0
-        });
+        }, connection); // Pass the existing connection to avoid nested transaction
         console.log('✅ [INVOICE MODEL] Shop ledger entry created successfully');
       } catch (ledgerError) {
         console.error('⚠️ [INVOICE MODEL] Warning: Failed to create ledger entry:', ledgerError.message);
-        // Don't fail the invoice creation if ledger entry fails
+        // Log but don't fail the invoice creation
+        // The recalculate function can fix this later
       }
+
+      await connection.commit();
+      connection.release();
+
+      console.log(`✅ [INVOICE MODEL] Professional invoice ${invoiceId} created with ${items.length} items`);
+      console.log(`   📄 Invoice Number: ${invoice_number}`);
+      console.log(`   🏪 Shop: ${customerInfo.shop_name}`);
+      console.log(`   👤 Salesman: ${salesmanInfo.salesman_name}`);
+      console.log(`   💰 Net Amount: ${net_amount}`);
+      console.log(`   💳 Total Payable: ${total_payable}`);
       
       // Return the complete invoice
       return await this.findById(invoiceId);
@@ -439,11 +441,31 @@ class Invoice {
    */
   async findById(id) {
     try {
-      // Get invoice header
-      const [invoices] = await db.query(
-        `SELECT * FROM invoices WHERE id = ?`,
-        [id]
-      );
+      // Get invoice header with shop, route, and salesman details via JOIN
+      // SQLite schema stores minimal data in invoices table, so we need to join
+      const query = useSQLite ? `
+        SELECT 
+          i.*,
+          s.shop_name,
+          s.address as shop_address,
+          s.city as shop_city,
+          s.phone as shop_phone,
+          s.owner_name as shop_owner,
+          s.route_id,
+          r.route_name,
+          o.salesman_id,
+          u.full_name as salesman_name
+        FROM invoices i
+        LEFT JOIN shops s ON i.shop_id = s.id
+        LEFT JOIN routes r ON s.route_id = r.id
+        LEFT JOIN orders o ON i.delivery_id = o.id OR (SELECT order_id FROM deliveries WHERE id = i.delivery_id) = o.id
+        LEFT JOIN users u ON o.salesman_id = u.id
+        WHERE i.id = ?
+      ` : `
+        SELECT * FROM invoices WHERE id = ?
+      `;
+      
+      const [invoices] = await db.query(query, [id]);
 
       if (invoices.length === 0) {
         return null;
@@ -453,10 +475,24 @@ class Invoice {
 
       // Get invoice items - use correct table name for SQLite
       const INVOICE_ITEMS_TABLE = useSQLite ? 'invoice_items' : 'invoice_details';
-      const [items] = await db.query(
-        `SELECT * FROM ${INVOICE_ITEMS_TABLE} WHERE invoice_id = ? ORDER BY id`,
-        [id]
-      );
+      
+      // Get items with product details
+      const itemsQuery = useSQLite ? `
+        SELECT 
+          ii.*,
+          p.product_name,
+          p.product_code,
+          p.pack_size,
+          p.unit_price as product_unit_price
+        FROM ${INVOICE_ITEMS_TABLE} ii
+        LEFT JOIN products p ON ii.product_id = p.id
+        WHERE ii.invoice_id = ?
+        ORDER BY ii.id
+      ` : `
+        SELECT * FROM ${INVOICE_ITEMS_TABLE} WHERE invoice_id = ? ORDER BY id
+      `;
+      
+      const [items] = await db.query(itemsQuery, [id]);
 
       // Get payment history - SQLite uses "payments" table, MySQL uses "invoice_payments"
       const PAYMENTS_TABLE = useSQLite ? 'payments' : 'invoice_payments';
@@ -645,80 +681,302 @@ class Invoice {
   }
 
   /**
-   * Record a payment for an invoice
+   * Generate unique payment receipt number
+   * @param {Object} connection - Database connection
+   * @returns {Promise<string>} Generated receipt number
+   */
+  async generateReceiptNumber(connection) {
+    const date = new Date();
+    const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
+    const prefix = `RCP-${dateStr}`;
+    
+    // Use correct table name based on database type
+    const PAYMENTS_TABLE = useSQLite ? 'payments' : 'invoice_payments';
+    
+    const [result] = await connection.query(
+      `SELECT receipt_number FROM ${PAYMENTS_TABLE} WHERE receipt_number LIKE ? ORDER BY receipt_number DESC LIMIT 1`,
+      [`${prefix}%`]
+    );
+    
+    let sequence = 1;
+    if (result && result.length > 0) {
+      const lastNumber = result[0].receipt_number;
+      const matches = lastNumber.match(/-(\d{4})$/);
+      if (matches) {
+        sequence = parseInt(matches[1]) + 1;
+      }
+    }
+    
+    return `${prefix}-${String(sequence).padStart(4, '0')}`;
+  }
+
+  /**
+   * Record a payment for an invoice with automatic ledger update
+   * Enterprise-grade payment recording with full audit trail
    * @param {number} invoiceId - Invoice ID
    * @param {Object} paymentData - Payment details
-   * @returns {Promise<Object>} Updated invoice
+   * @returns {Promise<Object>} Updated invoice with payment info
    */
   async recordPayment(invoiceId, paymentData) {
-    console.log(`💰 [INVOICE MODEL] Recording payment for invoice ${invoiceId}...`);
+    console.log(`💰 [INVOICE MODEL] Recording professional payment for invoice ${invoiceId}...`);
+    console.log(`   Amount: ${paymentData.payment_amount}, Method: ${paymentData.payment_method}`);
     
     const connection = await db.getConnection();
     try {
       await connection.beginTransaction();
 
-      // Get current invoice
-      const [invoices] = await connection.query(
-        'SELECT * FROM invoices WHERE id = ?',
-        [invoiceId]
-      );
+      // Get current invoice with shop details
+      const [invoices] = await connection.query(`
+        SELECT i.*, s.shop_name, s.current_balance as shop_current_balance
+        FROM invoices i
+        LEFT JOIN shops s ON i.shop_id = s.id
+        WHERE i.id = ?
+      `, [invoiceId]);
 
       if (invoices.length === 0) {
         throw new Error('Invoice not found');
       }
 
       const invoice = invoices[0];
+      const paymentAmount = parseFloat(paymentData.payment_amount);
+      
+      // Validate payment amount
+      if (paymentAmount <= 0) {
+        throw new Error('Payment amount must be greater than 0');
+      }
+      
+      if (paymentAmount > parseFloat(invoice.balance_amount)) {
+        throw new Error(`Payment amount (${paymentAmount}) cannot exceed outstanding balance (${invoice.balance_amount})`);
+      }
 
-      // Insert payment record
-      await connection.query(
-        `INSERT INTO invoice_payments (
-          invoice_id, payment_amount, payment_method, payment_date,
-          reference_number, bank_name, cheque_number, cheque_date,
-          notes, received_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          invoiceId,
-          paymentData.payment_amount,
-          paymentData.payment_method,
-          paymentData.payment_date || new Date(),
-          paymentData.reference_number || null,
-          paymentData.bank_name || null,
-          paymentData.cheque_number || null,
-          paymentData.cheque_date || null,
-          paymentData.notes || null,
-          paymentData.received_by || null
-        ]
-      );
+      // Generate unique receipt number
+      const receipt_number = await this.generateReceiptNumber(connection);
+      console.log(`📋 [INVOICE MODEL] Generated receipt number: ${receipt_number}`);
+
+      // Use correct table name based on database type
+      const PAYMENTS_TABLE = useSQLite ? 'payments' : 'invoice_payments';
+      
+      // SQLite has different column structure - use payments table schema
+      if (useSQLite) {
+        await connection.query(
+          `INSERT INTO payments (
+            receipt_number, shop_id, invoice_id, payment_date, amount,
+            payment_method, reference_number, notes, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+          [
+            receipt_number,
+            invoice.shop_id,
+            invoiceId,
+            paymentData.payment_date || new Date().toISOString().split('T')[0],
+            paymentAmount,
+            paymentData.payment_method || 'cash',
+            paymentData.reference_number || null,
+            paymentData.notes || null
+          ]
+        );
+      } else {
+        // MySQL invoice_payments table has more columns
+        await connection.query(
+          `INSERT INTO invoice_payments (
+            receipt_number, invoice_id, payment_amount, payment_method, payment_date,
+            reference_number, bank_name, cheque_number, cheque_date,
+            notes, received_by, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          [
+            receipt_number,
+            invoiceId,
+            paymentAmount,
+            paymentData.payment_method || 'cash',
+            paymentData.payment_date || new Date(),
+            paymentData.reference_number || null,
+            paymentData.bank_name || null,
+            paymentData.cheque_number || null,
+            paymentData.cheque_date || null,
+            paymentData.notes || null,
+            paymentData.received_by || null
+          ]
+        );
+      }
 
       // Calculate new paid amount and balance
-      const newPaidAmount = parseFloat(invoice.paid_amount) + parseFloat(paymentData.payment_amount);
-      const newBalance = parseFloat(invoice.net_amount) - newPaidAmount;
+      const newPaidAmount = parseFloat(invoice.paid_amount || 0) + paymentAmount;
+      const newInvoiceBalance = parseFloat(invoice.net_amount) - newPaidAmount;
 
       // Determine payment status
       let paymentStatus = 'unpaid';
-      if (newBalance <= 0) {
+      if (newInvoiceBalance <= 0.01) { // Allow for floating point precision
         paymentStatus = 'paid';
       } else if (newPaidAmount > 0) {
         paymentStatus = 'partial';
       }
 
-      // Update invoice
-      await connection.query(
-        `UPDATE invoices 
-         SET paid_amount = ?, 
-             balance_amount = ?, 
-             payment_status = ?,
-             updated_at = NOW()
-         WHERE id = ?`,
-        [newPaidAmount, Math.max(0, newBalance), paymentStatus, invoiceId]
-      );
+      console.log(`💰 [INVOICE MODEL] Payment calculation:`);
+      console.log(`   Previous Paid: ${invoice.paid_amount || 0}`);
+      console.log(`   This Payment: ${paymentAmount}`);
+      console.log(`   New Paid Total: ${newPaidAmount}`);
+      console.log(`   Invoice Net Amount: ${invoice.net_amount}`);
+      console.log(`   New Invoice Balance: ${newInvoiceBalance}`);
+      console.log(`   Payment Status: ${paymentStatus}`);
+
+      // Update invoice paid_amount, balance_amount, and payment_status
+      if (useSQLite) {
+        await connection.query(
+          `UPDATE invoices 
+           SET paid_amount = ?, 
+               balance_amount = ?, 
+               status = ?,
+               updated_at = datetime('now')
+           WHERE id = ?`,
+          [newPaidAmount, Math.max(0, newInvoiceBalance), paymentStatus, invoiceId]
+        );
+      } else {
+        await connection.query(
+          `UPDATE invoices 
+           SET paid_amount = ?, 
+               balance_amount = ?, 
+               payment_status = ?,
+               updated_at = NOW()
+           WHERE id = ?`,
+          [newPaidAmount, Math.max(0, newInvoiceBalance), paymentStatus, invoiceId]
+        );
+      }
+
+      // 🆕 CREATE SHOP LEDGER ENTRY - This is the critical missing piece!
+      // Payment from shop increases their balance (debit entry)
+      console.log(`📒 [INVOICE MODEL] Creating shop ledger entry for payment...`);
+      
+      // Get previous balance for this shop from ledger
+      const [prevEntries] = await connection.query(`
+        SELECT balance FROM shop_ledger 
+        WHERE shop_id = ? 
+        ORDER BY transaction_date DESC, id DESC 
+        LIMIT 1
+      `, [invoice.shop_id]);
+      
+      const previousLedgerBalance = prevEntries.length > 0 ? parseFloat(prevEntries[0].balance) : 0;
+      
+      // Payment received from shop = DEBIT (increases their credit/reduces their debt)
+      const debitAmount = paymentAmount;
+      const creditAmount = 0;
+      const newLedgerBalance = previousLedgerBalance + debitAmount - creditAmount;
+      
+      console.log(`💰 [LEDGER] Previous Balance: ${previousLedgerBalance}`);
+      console.log(`💰 [LEDGER] Debit (Payment): ${debitAmount}`);
+      console.log(`💰 [LEDGER] New Balance: ${newLedgerBalance}`);
+
+      // Build description based on payment status
+      let description = `Payment received - ${receipt_number}`;
+      if (paymentStatus === 'paid') {
+        description = `Full payment received for Invoice ${invoice.invoice_number} - ${receipt_number}`;
+      } else if (paymentStatus === 'partial') {
+        description = `Partial payment for Invoice ${invoice.invoice_number} - ${receipt_number}`;
+      }
+      
+      // Add payment method details to description
+      const methodLabels = {
+        'cash': 'Cash',
+        'bank': 'Bank Transfer',
+        'bank_transfer': 'Bank Transfer',
+        'cheque': 'Cheque',
+        'online': 'Online Payment',
+        'credit': 'Credit'
+      };
+      const methodLabel = methodLabels[paymentData.payment_method] || paymentData.payment_method;
+
+      // Insert ledger entry
+      if (useSQLite) {
+        await connection.query(`
+          INSERT INTO shop_ledger (
+            shop_id, shop_name, transaction_date, transaction_type,
+            reference_type, reference_id, reference_number,
+            debit_amount, credit_amount, balance,
+            description, notes, created_by, created_by_name, is_manual, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        `, [
+          invoice.shop_id,
+          invoice.shop_name || null,
+          paymentData.payment_date || new Date().toISOString().split('T')[0],
+          'payment',
+          'invoice_payment',
+          invoiceId,
+          receipt_number,
+          debitAmount,
+          creditAmount,
+          newLedgerBalance,
+          description,
+          `${methodLabel} payment. ${paymentData.notes || ''}`.trim(),
+          paymentData.created_by || null,
+          paymentData.received_by || null,
+          0
+        ]);
+      } else {
+        await connection.query(`
+          INSERT INTO shop_ledger (
+            shop_id, shop_name, transaction_date, transaction_type,
+            reference_type, reference_id, reference_number,
+            debit_amount, credit_amount, balance,
+            description, notes, created_by, created_by_name, is_manual
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          invoice.shop_id,
+          invoice.shop_name || null,
+          paymentData.payment_date || new Date(),
+          'payment',
+          'invoice_payment',
+          invoiceId,
+          receipt_number,
+          debitAmount,
+          creditAmount,
+          newLedgerBalance,
+          description,
+          `${methodLabel} payment. ${paymentData.notes || ''}`.trim(),
+          paymentData.created_by || null,
+          paymentData.received_by || null,
+          0
+        ]);
+      }
+
+      // Update shop's current_balance
+      if (useSQLite) {
+        await connection.query(`
+          UPDATE shops 
+          SET current_balance = ?, 
+              last_transaction_date = datetime('now')
+          WHERE id = ?
+        `, [newLedgerBalance, invoice.shop_id]);
+      } else {
+        await connection.query(`
+          UPDATE shops 
+          SET current_balance = ?, 
+              last_transaction_date = NOW()
+          WHERE id = ?
+        `, [newLedgerBalance, invoice.shop_id]);
+      }
 
       await connection.commit();
       connection.release();
 
-      console.log(`✅ [INVOICE MODEL] Payment recorded. New balance: ${newBalance}`);
+      console.log(`✅ [INVOICE MODEL] Payment recorded successfully!`);
+      console.log(`   📋 Receipt: ${receipt_number}`);
+      console.log(`   💰 Amount: ${paymentAmount}`);
+      console.log(`   📊 Invoice Status: ${paymentStatus}`);
+      console.log(`   📒 New Ledger Balance: ${newLedgerBalance}`);
       
-      return await this.findById(invoiceId);
+      // Return updated invoice with payment details
+      const updatedInvoice = await this.findById(invoiceId);
+      return {
+        ...updatedInvoice,
+        payment_receipt: {
+          receipt_number,
+          amount: paymentAmount,
+          method: paymentData.payment_method,
+          date: paymentData.payment_date || new Date().toISOString().split('T')[0],
+          previous_balance: parseFloat(invoice.balance_amount),
+          new_balance: Math.max(0, newInvoiceBalance),
+          payment_status: paymentStatus,
+          ledger_balance: newLedgerBalance
+        }
+      };
     } catch (error) {
       await connection.rollback();
       connection.release();
@@ -833,23 +1091,23 @@ class Invoice {
   async getInvoicesAvailableForDelivery(filters = {}) {
     try {
       console.log('📋 [INVOICE MODEL] Fetching invoices available for delivery...');
+      console.log('📋 [INVOICE MODEL] Using SQLite:', useSQLite);
       
-      const conditions = ['i.status = ?'];
-      const params = [filters.status || 'issued'];
+      // SQLite schema: invoices table has status ('unpaid', 'partial', 'paid'), not 'issued'
+      // We want invoices that are created and need delivery - typically unpaid or partial
+      const INVOICE_ITEMS_TABLE = useSQLite ? 'invoice_items' : 'invoice_details';
+      
+      // Build conditions - for SQLite we need to fetch all invoices and join with shops
+      const conditions = ['1=1']; // Base condition
+      const params = [];
+
+      // For SQLite, status is 'unpaid', 'partial', 'paid' - not 'issued'
+      // We want invoices that need delivery - all that are not fully delivered yet
+      // Don't filter by status here, filter by delivery status later
 
       if (filters.shop_id) {
         conditions.push('i.shop_id = ?');
         params.push(filters.shop_id);
-      }
-
-      if (filters.route_id) {
-        conditions.push('i.route_id = ?');
-        params.push(filters.route_id);
-      }
-
-      if (filters.salesman_id) {
-        conditions.push('i.salesman_id = ?');
-        params.push(filters.salesman_id);
       }
 
       if (filters.from_date) {
@@ -864,8 +1122,32 @@ class Invoice {
 
       const whereClause = conditions.join(' AND ');
 
-      // Get invoices with their delivery status
-      const [invoices] = await db.query(`
+      // SQLite query - join with shops table to get shop details
+      // Note: SQLite deliveries table has order_id, not invoice_id
+      // We need to link invoice -> delivery via order_id (if invoice has delivery_id) or treat as no challan
+      const query = useSQLite ? `
+        SELECT 
+          i.id,
+          i.invoice_number,
+          i.invoice_date,
+          i.shop_id,
+          s.shop_name,
+          s.address as shop_address,
+          s.city as shop_city,
+          r.id as route_id,
+          r.route_name,
+          i.net_amount,
+          i.status as payment_status,
+          i.status,
+          i.delivery_id,
+          -- Count of invoice items
+          (SELECT COUNT(*) FROM ${INVOICE_ITEMS_TABLE} WHERE invoice_id = i.id) as total_items
+        FROM invoices i
+        LEFT JOIN shops s ON i.shop_id = s.id
+        LEFT JOIN routes r ON s.route_id = r.id
+        WHERE ${whereClause}
+        ORDER BY i.invoice_date DESC, i.created_at DESC
+      ` : `
         SELECT 
           i.id,
           i.invoice_number,
@@ -881,20 +1163,16 @@ class Invoice {
           i.net_amount,
           i.payment_status,
           i.status,
-          -- Count of invoice items
-          (SELECT COUNT(*) FROM ${useSQLite ? 'invoice_items' : 'invoice_details'} WHERE invoice_id = i.id) as total_items,
-          -- Count of delivered items (across all challans for this invoice)
+          (SELECT COUNT(*) FROM ${INVOICE_ITEMS_TABLE} WHERE invoice_id = i.id) as total_items,
           COALESCE((
             SELECT COUNT(DISTINCT di.product_id) 
             FROM deliveries d
             JOIN delivery_items di ON d.id = di.delivery_id
             WHERE d.invoice_id = i.id
           ), 0) as delivered_items_count,
-          -- Check if any challan exists
           COALESCE((
             SELECT COUNT(*) FROM deliveries WHERE invoice_id = i.id
           ), 0) as challan_count,
-          -- Get latest challan status
           (
             SELECT status 
             FROM deliveries 
@@ -905,27 +1183,44 @@ class Invoice {
         FROM invoices i
         WHERE ${whereClause}
         ORDER BY i.invoice_date DESC, i.created_at DESC
-      `, params);
+      `;
 
-      console.log('✅ [INVOICE MODEL] Found', invoices.length, 'invoices');
+      const [invoices] = await db.query(query, params);
 
-      // Filter to show:
-      // 1. Invoices with no challans at all
-      // 2. Invoices with partial deliveries (delivered_items_count < total_items)
-      const availableInvoices = invoices.filter(inv => {
-        const hasNoChallan = inv.challan_count === 0;
-        const hasPartialDelivery = inv.delivered_items_count < inv.total_items;
-        return hasNoChallan || hasPartialDelivery;
-      });
+      console.log('✅ [INVOICE MODEL] Raw query returned', invoices.length, 'invoices');
 
-      // Add delivery status for display
-      availableInvoices.forEach(inv => {
-        if (inv.challan_count === 0) {
-          inv.delivery_status = 'Not Started';
-        } else if (inv.delivered_items_count < inv.total_items) {
-          inv.delivery_status = `Partial (${inv.delivered_items_count}/${inv.total_items})`;
-        }
-      });
+      // For SQLite, we need to calculate delivery status differently
+      // Since SQLite deliveries table doesn't have invoice_id, check if delivery_id exists on invoice
+      let availableInvoices;
+      
+      if (useSQLite) {
+        // For SQLite: invoice has delivery_id column - if null, no challan created
+        availableInvoices = invoices.map(inv => {
+          const hasNoChallan = !inv.delivery_id;
+          return {
+            ...inv,
+            challan_count: hasNoChallan ? 0 : 1,
+            delivered_items_count: hasNoChallan ? 0 : inv.total_items, // Assume full delivery if challan exists
+            delivery_status: hasNoChallan ? 'Not Started' : 'Partial/Delivered'
+          };
+        }).filter(inv => inv.challan_count === 0); // Only show invoices without challans
+      } else {
+        // MySQL: Filter based on delivery status
+        availableInvoices = invoices.filter(inv => {
+          const hasNoChallan = inv.challan_count === 0;
+          const hasPartialDelivery = inv.delivered_items_count < inv.total_items;
+          return hasNoChallan || hasPartialDelivery;
+        });
+
+        // Add delivery status for display
+        availableInvoices.forEach(inv => {
+          if (inv.challan_count === 0) {
+            inv.delivery_status = 'Not Started';
+          } else if (inv.delivered_items_count < inv.total_items) {
+            inv.delivery_status = `Partial (${inv.delivered_items_count}/${inv.total_items})`;
+          }
+        });
+      }
 
       console.log('✅ [INVOICE MODEL] Filtered to', availableInvoices.length, 'available invoices');
       

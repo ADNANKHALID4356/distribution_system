@@ -10,6 +10,8 @@ import {
   ArrowUpTrayIcon,
   ExclamationTriangleIcon,
   ArrowLeftIcon,
+  BuildingStorefrontIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
 
 const ProductListPage = () => {
@@ -20,6 +22,11 @@ const ProductListPage = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  // Warehouse stock modal state
+  const [showWarehouseStockModal, setShowWarehouseStockModal] = useState(false);
+  const [selectedProductStock, setSelectedProductStock] = useState(null);
+  const [loadingWarehouseStock, setLoadingWarehouseStock] = useState(false);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -142,6 +149,44 @@ const ProductListPage = () => {
     setSelectedStockLevel('');
     setSelectedStatus('true'); // Reset to show only active products (default)
     setCurrentPage(1);
+  };
+
+  // Fetch warehouse stock for a product
+  const handleViewWarehouseStock = async (product) => {
+    setLoadingWarehouseStock(true);
+    setShowWarehouseStockModal(true);
+    try {
+      const response = await productService.getProductWarehouseStock(product.id);
+      if (response.success) {
+        setSelectedProductStock(response.data);
+      } else {
+        setSelectedProductStock({
+          product: {
+            id: product.id,
+            product_code: product.product_code,
+            product_name: product.product_name,
+            global_stock: product.stock_quantity
+          },
+          warehouseStock: [],
+          totals: { totalWarehouses: 0, totalQuantity: 0, totalReserved: 0, totalAvailable: 0 }
+        });
+      }
+    } catch (err) {
+      console.error('Failed to fetch warehouse stock:', err);
+      setSelectedProductStock({
+        product: {
+          id: product.id,
+          product_code: product.product_code,
+          product_name: product.product_name,
+          global_stock: product.stock_quantity
+        },
+        warehouseStock: [],
+        totals: { totalWarehouses: 0, totalQuantity: 0, totalReserved: 0, totalAvailable: 0 },
+        error: 'Failed to load warehouse stock data'
+      });
+    } finally {
+      setLoadingWarehouseStock(false);
+    }
   };
 
   // Get stock status badge
@@ -434,6 +479,13 @@ const ProductListPage = () => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                           <button
+                            onClick={() => handleViewWarehouseStock(product)}
+                            className="text-blue-600 hover:text-blue-900 mr-3"
+                            title="View Warehouse Stock"
+                          >
+                            <BuildingStorefrontIcon className="w-5 h-5" />
+                          </button>
+                          <button
                             onClick={() => navigate(`/products/edit/${product.id}`)}
                             className="text-primary-600 hover:text-primary-900 mr-3"
                             title="Edit"
@@ -548,6 +600,168 @@ const ProductListPage = () => {
           )}
         </div>
       </div>
+
+      {/* Warehouse Stock Modal */}
+      {showWarehouseStockModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+            {/* Background overlay */}
+            <div 
+              className="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75" 
+              onClick={() => setShowWarehouseStockModal(false)}
+            ></div>
+
+            {/* Modal panel */}
+            <div className="inline-block w-full max-w-2xl my-8 overflow-hidden text-left align-middle transition-all transform bg-white rounded-lg shadow-xl">
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-blue-600 to-blue-700">
+                <div className="flex items-center">
+                  <BuildingStorefrontIcon className="w-6 h-6 text-white mr-2" />
+                  <h3 className="text-lg font-semibold text-white">
+                    Warehouse Stock Distribution
+                  </h3>
+                </div>
+                <button
+                  onClick={() => setShowWarehouseStockModal(false)}
+                  className="text-white hover:text-gray-200"
+                >
+                  <XMarkIcon className="w-6 h-6" />
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="px-6 py-4 max-h-[60vh] overflow-y-auto">
+                {loadingWarehouseStock ? (
+                  <div className="text-center py-8">
+                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                    <p className="mt-2 text-sm text-gray-600">Loading warehouse stock...</p>
+                  </div>
+                ) : selectedProductStock ? (
+                  <>
+                    {/* Product Info */}
+                    <div className="mb-4 p-4 bg-gray-50 rounded-lg">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="text-sm text-gray-500">Product Code: {selectedProductStock.product?.product_code}</p>
+                          <h4 className="text-lg font-semibold text-gray-900">{selectedProductStock.product?.product_name}</h4>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm text-gray-500">Global Stock</p>
+                          <p className="text-2xl font-bold text-gray-900">{selectedProductStock.product?.global_stock || 0}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Error message */}
+                    {selectedProductStock.error && (
+                      <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                        <p className="text-sm text-red-600">{selectedProductStock.error}</p>
+                      </div>
+                    )}
+
+                    {/* Stock Summary */}
+                    {selectedProductStock.totals && selectedProductStock.totals.totalWarehouses > 0 && (
+                      <div className="mb-4 grid grid-cols-4 gap-3">
+                        <div className="p-3 bg-blue-50 rounded-lg text-center">
+                          <p className="text-xs text-blue-600">Warehouses</p>
+                          <p className="text-xl font-bold text-blue-700">{selectedProductStock.totals.totalWarehouses}</p>
+                        </div>
+                        <div className="p-3 bg-green-50 rounded-lg text-center">
+                          <p className="text-xs text-green-600">Total Qty</p>
+                          <p className="text-xl font-bold text-green-700">{selectedProductStock.totals.totalQuantity}</p>
+                        </div>
+                        <div className="p-3 bg-orange-50 rounded-lg text-center">
+                          <p className="text-xs text-orange-600">Reserved</p>
+                          <p className="text-xl font-bold text-orange-700">{selectedProductStock.totals.totalReserved}</p>
+                        </div>
+                        <div className="p-3 bg-purple-50 rounded-lg text-center">
+                          <p className="text-xs text-purple-600">Available</p>
+                          <p className="text-xl font-bold text-purple-700">{selectedProductStock.totals.totalAvailable}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Warehouse Stock Table */}
+                    {selectedProductStock.warehouseStock && selectedProductStock.warehouseStock.length > 0 ? (
+                      <div className="overflow-hidden border border-gray-200 rounded-lg">
+                        <table className="min-w-full divide-y divide-gray-200">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Warehouse</th>
+                              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Quantity</th>
+                              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Reserved</th>
+                              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Available</th>
+                              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-gray-200">
+                            {selectedProductStock.warehouseStock.map((ws, index) => {
+                              const isLowStock = ws.quantity <= ws.min_stock_level;
+                              const isOutOfStock = ws.available_quantity <= 0;
+                              return (
+                                <tr key={index} className={isOutOfStock ? 'bg-red-50' : isLowStock ? 'bg-yellow-50' : ''}>
+                                  <td className="px-4 py-3 whitespace-nowrap">
+                                    <div className="text-sm font-medium text-gray-900">{ws.warehouse_name}</div>
+                                    {ws.warehouse_code && <div className="text-xs text-gray-500">{ws.warehouse_code}</div>}
+                                    {ws.location_in_warehouse && <div className="text-xs text-gray-400">📍 {ws.location_in_warehouse}</div>}
+                                  </td>
+                                  <td className="px-4 py-3 whitespace-nowrap text-center">
+                                    <span className="text-sm font-semibold text-gray-900">{ws.quantity}</span>
+                                  </td>
+                                  <td className="px-4 py-3 whitespace-nowrap text-center">
+                                    <span className="text-sm text-orange-600">{ws.reserved_quantity || 0}</span>
+                                  </td>
+                                  <td className="px-4 py-3 whitespace-nowrap text-center">
+                                    <span className={`text-sm font-semibold ${ws.available_quantity > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                      {ws.available_quantity}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3 whitespace-nowrap text-center">
+                                    {isOutOfStock ? (
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                                        Out of Stock
+                                      </span>
+                                    ) : isLowStock ? (
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
+                                        <ExclamationTriangleIcon className="w-3 h-3 mr-1" />
+                                        Low Stock
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                        OK
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 bg-gray-50 rounded-lg">
+                        <BuildingStorefrontIcon className="w-12 h-12 mx-auto text-gray-400" />
+                        <p className="mt-2 text-sm text-gray-500">No warehouse stock records found</p>
+                        <p className="text-xs text-gray-400 mt-1">Add this product to warehouses from Warehouse Management</p>
+                      </div>
+                    )}
+                  </>
+                ) : null}
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-4 bg-gray-50 flex justify-end">
+                <button
+                  onClick={() => setShowWarehouseStockModal(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

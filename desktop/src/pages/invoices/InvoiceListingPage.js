@@ -600,8 +600,8 @@ const InvoiceListingPage = () => {
                         {invoiceService.formatCurrency(invoice.balance_amount)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
-                        <span className={`px-2 py-1 text-xs font-semibold rounded-full ${invoiceService.getPaymentStatusColor(invoice.payment_status)}`}>
-                          {invoice.payment_status}
+                        <span className={`px-2 py-1 text-xs font-semibold rounded-full ${invoiceService.getPaymentStatusColor(invoice.payment_status || invoice.status)}`}>
+                          {invoice.payment_status || invoice.status}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
@@ -622,10 +622,11 @@ const InvoiceListingPage = () => {
                             </svg>
                           </button>
                           
-                          {(invoice.payment_status === 'unpaid' || invoice.payment_status === 'partial') && invoice.status !== 'cancelled' && (
+                          {(invoice.payment_status === 'unpaid' || invoice.payment_status === 'partial' || invoice.status === 'unpaid' || invoice.status === 'partial') && invoice.status !== 'cancelled' && (
                             <button
                               onClick={() => handleRecordPayment(invoice)}
-                              className="text-green-600 hover:text-green-800"
+                              className="text-green-600 hover:text-green-800 record-payment-btn"
+                              data-invoice-id={invoice.id}
                               title="Record Payment"
                             >
                               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -633,6 +634,17 @@ const InvoiceListingPage = () => {
                               </svg>
                             </button>
                           )}
+
+                          {/* View Shop Ledger Button */}
+                          <button
+                            onClick={() => navigate(`/ledger/shop/${invoice.shop_id}`)}
+                            className="text-purple-600 hover:text-purple-800"
+                            title="View Shop Ledger"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                          </button>
                           
                           {invoice.status !== 'cancelled' && (
                             <button

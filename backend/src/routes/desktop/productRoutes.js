@@ -15,7 +15,8 @@ const {
   getLowStockProducts,
   getCategories,
   getBrands,
-  bulkImportProducts
+  bulkImportProducts,
+  getProductWarehouseStock
 } = require('../../controllers/productController');
 
 // All routes require authentication
@@ -50,6 +51,11 @@ router.get('/', authorize('Admin', 'Manager'), getProducts);
 // @desc    Get single product
 // @access  Private (Admin, Manager)
 router.get('/:id', authorize('Admin', 'Manager'), getProductById);
+
+// @route   GET /api/desktop/products/:id/warehouse-stock
+// @desc    Get warehouse stock breakdown for a product
+// @access  Private (Admin, Manager)
+router.get('/:id/warehouse-stock', authorize('Admin', 'Manager'), getProductWarehouseStock);
 
 // @route   POST /api/desktop/products
 // @desc    Create new product

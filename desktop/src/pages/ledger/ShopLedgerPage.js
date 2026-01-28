@@ -9,10 +9,12 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import ledgerService from '../../services/ledgerService';
 import shopService from '../../services/shopService';
+import { useAuth } from '../../context/AuthContext';
 
 const ShopLedgerPage = () => {
   const { shopId } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   
   // State management
   const [shop, setShop] = useState(null);
@@ -43,6 +45,14 @@ const ShopLedgerPage = () => {
     reference_number: '',
     notes: ''
   });
+
+  // Admin Functions State
+  const [showClearHistoryModal, setShowClearHistoryModal] = useState(false);
+  const [clearHistoryConfirm, setClearHistoryConfirm] = useState('');
+  const [retainOpeningBalance, setRetainOpeningBalance] = useState(false);
+
+  // Check if user is admin
+  const isAdmin = user?.role === 'admin' || user?.role === 'Admin';
 
   // Load data on mount and when filters change
   useEffect(() => {
@@ -193,6 +203,35 @@ const ShopLedgerPage = () => {
     return colors[type] || 'text-gray-600';
   };
 
+  const handleClearHistory = async () => {
+    // Safety check: user must type the shop name to confirm
+    if (clearHistoryConfirm !== shop?.shop_name) {
+      setError('Please type the shop name correctly to confirm');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError('');
+      
+      const response = await ledgerService.clearTransactionHistory(shopId, retainOpeningBalance);
+      
+      if (response.success) {
+        setSuccess(`✅ Cleared ${response.data.entries_deleted} transaction entries. ${retainOpeningBalance ? 'Opening balance retained.' : 'Balance reset to zero.'}`);
+        setShowClearHistoryModal(false);
+        setClearHistoryConfirm('');
+        setRetainOpeningBalance(false);
+        loadLedger();
+        loadShopDetails();
+      }
+    } catch (err) {
+      console.error('Error clearing history:', err);
+      setError(err.response?.data?.message || 'Failed to clear transaction history');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="container mx-auto px-4 py-6">
       {/* Header */}
@@ -230,12 +269,17 @@ const ShopLedgerPage = () => {
           >
             💸 Pay to Shop
           </button>
-          <button
-            onClick={handlePrintStatement}
-            className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition"
-          >
-            🖨️ Print Ledger
-          </button>
+          
+          {/* Admin Functions - Clear History only */}
+          {isAdmin && (
+            <button
+              onClick={() => setShowClearHistoryModal(true)}
+              className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition"
+              title="Clear transaction history (Admin only)"
+            >
+              🗑️ Clear History
+            </button>
+          )}
         </div>
       </div>
 
@@ -588,6 +632,115 @@ const ShopLedgerPage = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Clear History Modal (Admin Only) */}
+      {showClearHistoryModal && isAdmin && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-lg">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold text-red-600">⚠️ Clear Transaction History</h2>
+              <button
+                onClick={() => {
+                  setShowClearHistoryModal(false);
+                  setClearHistoryConfirm('');
+                  setRetainOpeningBalance(false);
+                }}
+                className="text-gray-500 hover:text-gray-700 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="mb-4 p-4 bg-red-50 rounded-lg border border-red-200">
+              <h3 className="font-bold text-red-800 mb-2">⚠️ Warning: This action cannot be undone!</h3>
+              <p className="text-sm text-red-700 mb-2">
+                This will permanently delete all transaction history (ledger entries) for this shop.
+              </p>
+              <p className="text-sm text-red-700">
+                <strong>What will be deleted:</strong>
+                <ul className="list-disc list-inside mt-1">
+                  <li>All ledger entries (invoices, payments, adjustments)</li>
+                  <li>Transaction history records</li>
+                </ul>
+              </p>
+              <p className="text-sm text-green-700 mt-2">
+                <strong>What will be preserved:</strong>
+                <ul className="list-disc list-inside mt-1">
+                  <li>Shop information</li>
+                  <li>Original invoice records</li>
+                  <li>Original payment records</li>
+                  <li>Products and inventory</li>
+                </ul>
+              </p>
+            </div>
+
+            <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+              <div className="text-sm text-gray-600">Shop</div>
+              <div className="font-semibold text-lg">{shop?.shop_name}</div>
+              <div className="text-sm text-gray-600 mt-2">Current Balance</div>
+              <div className="text-xl font-bold text-blue-600">
+                Rs {parseFloat(shop?.current_balance || 0).toFixed(2)}
+              </div>
+              <div className="text-sm text-gray-600 mt-2">Total Transactions</div>
+              <div className="font-semibold">{totalRecords} entries</div>
+            </div>
+
+            <div className="mb-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={retainOpeningBalance}
+                  onChange={(e) => setRetainOpeningBalance(e.target.checked)}
+                  className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-700">
+                  Retain current balance as opening balance (recommended)
+                </span>
+              </label>
+              <p className="text-xs text-gray-500 mt-1 ml-6">
+                If checked, the current balance will be preserved as an opening balance entry after clearing history.
+                If unchecked, the balance will be reset to zero.
+              </p>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Type "<strong>{shop?.shop_name}</strong>" to confirm:
+              </label>
+              <input
+                type="text"
+                value={clearHistoryConfirm}
+                onChange={(e) => setClearHistoryConfirm(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                placeholder="Type shop name to confirm"
+              />
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4 border-t">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowClearHistoryModal(false);
+                  setClearHistoryConfirm('');
+                  setRetainOpeningBalance(false);
+                }}
+                className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleClearHistory}
+                disabled={loading || clearHistoryConfirm !== shop?.shop_name}
+                className={`px-6 py-2 rounded-lg text-white transition bg-red-600 hover:bg-red-700 ${
+                  (loading || clearHistoryConfirm !== shop?.shop_name) ? 'opacity-50 cursor-not-allowed' : ''
+                }`}
+              >
+                {loading ? 'Clearing...' : '🗑️ Clear History'}
+              </button>
+            </div>
           </div>
         </div>
       )}

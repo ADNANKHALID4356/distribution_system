@@ -211,6 +211,11 @@ exports.deleteInvoice = async (req, res) => {
     const { id } = req.params;
     const { force } = req.query; // Admin override: ?force=true
     const db = require('../config/database');
+    
+    // SQLite compatibility - use correct table names
+    const useSQLite = process.env.USE_SQLITE === 'true';
+    const PAYMENTS_TABLE = useSQLite ? 'payments' : 'invoice_payments';
+    const INVOICE_ITEMS_TABLE = useSQLite ? 'invoice_items' : 'invoice_details';
 
     // Check if invoice exists
     const existingInvoice = await Invoice.findById(id);
@@ -221,13 +226,21 @@ exports.deleteInvoice = async (req, res) => {
       });
     }
 
-    // Check for dependencies (payments, deliveries)
-    const [payments] = await db.query('SELECT COUNT(*) as count FROM invoice_payments WHERE invoice_id = ?', [id]);
-    const [deliveries] = await db.query('SELECT COUNT(*) as count FROM deliveries WHERE invoice_id = ?', [id]);
+    // Check for dependencies (payments)
+    const [payments] = await db.query(`SELECT COUNT(*) as count FROM ${PAYMENTS_TABLE} WHERE invoice_id = ?`, [id]);
+    
+    // Check for deliveries - SQLite deliveries table doesn't have invoice_id column
+    let deliveriesCount = 0;
+    if (!useSQLite) {
+      const [deliveries] = await db.query('SELECT COUNT(*) as count FROM deliveries WHERE invoice_id = ?', [id]);
+      deliveriesCount = deliveries[0].count;
+    }
 
     const hasPayments = payments[0].count > 0;
-    const hasDeliveries = deliveries[0].count > 0;
-    const isPaidOrPartial = existingInvoice.payment_status === 'paid' || existingInvoice.payment_status === 'partial';
+    const hasDeliveries = deliveriesCount > 0;
+    // SQLite uses 'status' column, MySQL uses 'payment_status'
+    const invoiceStatus = existingInvoice.payment_status || existingInvoice.status;
+    const isPaidOrPartial = invoiceStatus === 'paid' || invoiceStatus === 'partial';
 
     // If invoice has payments/deliveries and force flag is not set, return error with details
     if ((hasPayments || isPaidOrPartial || hasDeliveries) && force !== 'true') {
@@ -236,8 +249,8 @@ exports.deleteInvoice = async (req, res) => {
         message: 'Cannot delete invoice with existing payments or deliveries',
         dependencies: {
           payments: payments[0].count,
-          deliveries: deliveries[0].count,
-          payment_status: existingInvoice.payment_status,
+          deliveries: deliveriesCount,
+          payment_status: invoiceStatus,
           paid_amount: existingInvoice.paid_amount
         },
         hint: 'Use force=true query parameter to delete invoice with all related data (Admin only)'
@@ -253,16 +266,22 @@ exports.deleteInvoice = async (req, res) => {
       await connection.beginTransaction();
 
       try {
-        // 1. Delete invoice_payments (will cascade automatically, but explicit for logging)
-        await connection.query('DELETE FROM invoice_payments WHERE invoice_id = ?', [id]);
+        // 1. Delete payments (use correct table name)
+        await connection.query(`DELETE FROM ${PAYMENTS_TABLE} WHERE invoice_id = ?`, [id]);
         
-        // 2. Delete invoice_details (will cascade automatically)
-        await connection.query('DELETE FROM invoice_details WHERE invoice_id = ?', [id]);
+        // 2. Delete invoice items (use correct table name)
+        await connection.query(`DELETE FROM ${INVOICE_ITEMS_TABLE} WHERE invoice_id = ?`, [id]);
         
-        // 3. Set deliveries.invoice_id to NULL (will happen automatically with SET NULL, but explicit)
-        await connection.query('UPDATE deliveries SET invoice_id = NULL WHERE invoice_id = ?', [id]);
+        // 3. Set deliveries.invoice_id to NULL (only for MySQL - SQLite doesn't have this column)
+        if (!useSQLite) {
+          await connection.query('UPDATE deliveries SET invoice_id = NULL WHERE invoice_id = ?', [id]);
+        }
         
-        // 4. Finally, delete the invoice
+        // 4. Delete related shop_ledger entries for this invoice
+        await connection.query('DELETE FROM shop_ledger WHERE reference_type = ? AND reference_id = ?', ['invoice', id]);
+        await connection.query('DELETE FROM shop_ledger WHERE reference_type = ? AND reference_id = ?', ['invoice_payment', id]);
+        
+        // 5. Finally, delete the invoice
         await connection.query('DELETE FROM invoices WHERE id = ?', [id]);
 
         await connection.commit();
@@ -276,7 +295,7 @@ exports.deleteInvoice = async (req, res) => {
           deleted: {
             invoice: existingInvoice.invoice_number,
             payments: payments[0].count,
-            deliveries: deliveries[0].count,
+            deliveries: deliveriesCount,
             paid_amount: existingInvoice.paid_amount
           }
         });

@@ -960,17 +960,18 @@ class DatabaseHelper {
   /**
    * Get all orders with sync status
    * Used by OrdersListScreen to display all orders
+   * CRITICAL: salesmanId is REQUIRED for multi-tenancy
    */
   async getAllOrders(salesmanId = null) {
     try {
-      let query = 'SELECT * FROM orders';
-      const params = [];
-      
-      // Filter by salesman_id for multi-tenancy
-      if (salesmanId) {
-        query += ' WHERE salesman_id = ?';
-        params.push(salesmanId);
+      // CRITICAL: Prevent fetching all orders from all salesmen
+      if (!salesmanId) {
+        console.error('❌ getAllOrders called without salesmanId - SECURITY VIOLATION');
+        throw new Error('salesmanId is required for getAllOrders');
       }
+      
+      let query = 'SELECT * FROM orders WHERE salesman_id = ?';
+      const params = [salesmanId];
       
       query += ' ORDER BY order_date DESC, created_at DESC';
       
@@ -1019,17 +1020,18 @@ class DatabaseHelper {
 
   /**
    * Get orders by shop
+   * CRITICAL: salesmanId is REQUIRED for multi-tenancy
    */
   async getOrdersByShop(shopId, status = null, salesmanId = null) {
     try {
-      let query = 'SELECT * FROM orders WHERE shop_id = ?';
-      const params = [shopId];
-      
-      // Filter by salesman_id for multi-tenancy
-      if (salesmanId) {
-        query += ' AND salesman_id = ?';
-        params.push(salesmanId);
+      // CRITICAL: Prevent fetching orders from other salesmen
+      if (!salesmanId) {
+        console.error('❌ getOrdersByShop called without salesmanId - SECURITY VIOLATION');
+        throw new Error('salesmanId is required for getOrdersByShop');
       }
+      
+      let query = 'SELECT * FROM orders WHERE shop_id = ? AND salesman_id = ?';
+      const params = [shopId, salesmanId];
       
       if (status) {
         query += ' AND status = ?';
@@ -1048,17 +1050,18 @@ class DatabaseHelper {
 
   /**
    * Get draft orders
+   * CRITICAL: salesmanId is REQUIRED for multi-tenancy
    */
   async getDraftOrders(salesmanId = null) {
     try {
-      let query = 'SELECT * FROM orders WHERE status = \'draft\'';
-      const params = [];
-      
-      // Filter by salesman_id for multi-tenancy
-      if (salesmanId) {
-        query += ' AND salesman_id = ?';
-        params.push(salesmanId);
+      // CRITICAL: Prevent fetching drafts from other salesmen
+      if (!salesmanId) {
+        console.error('❌ getDraftOrders called without salesmanId - SECURITY VIOLATION');
+        throw new Error('salesmanId is required for getDraftOrders');
       }
+      
+      let query = 'SELECT * FROM orders WHERE status = \'draft\' AND salesman_id = ?';
+      const params = [salesmanId];
       
       query += ' ORDER BY created_at DESC';
       
@@ -1072,18 +1075,18 @@ class DatabaseHelper {
 
   /**
    * Get unsynced orders (ready to sync)
-   * CRITICAL: Must filter by salesman_id for multi-tenancy
+   * CRITICAL: salesmanId is REQUIRED for multi-tenancy
    */
   async getUnsyncedOrders(salesmanId = null) {
     try {
-      let query = 'SELECT * FROM orders WHERE synced = 0 AND status != \'draft\'';
-      const params = [];
-      
-      // Filter by salesman_id for multi-tenancy - CRITICAL!
-      if (salesmanId) {
-        query += ' AND salesman_id = ?';
-        params.push(salesmanId);
+      // CRITICAL: Prevent syncing orders from other salesmen
+      if (!salesmanId) {
+        console.error('❌ getUnsyncedOrders called without salesmanId - SECURITY VIOLATION');
+        throw new Error('salesmanId is required for getUnsyncedOrders');
       }
+      
+      let query = 'SELECT * FROM orders WHERE synced = 0 AND status != \'draft\' AND salesman_id = ?';
+      const params = [salesmanId];
       
       query += ' ORDER BY order_date ASC, created_at ASC';
       
@@ -1295,9 +1298,16 @@ class DatabaseHelper {
 
   /**
    * Get order statistics
+   * CRITICAL: salesmanId is REQUIRED for multi-tenancy
    */
   async getOrderStats(salesmanId = null) {
     try {
+      // CRITICAL: Prevent getting stats from other salesmen
+      if (!salesmanId) {
+        console.error('❌ getOrderStats called without salesmanId - SECURITY VIOLATION');
+        throw new Error('salesmanId is required for getOrderStats');
+      }
+      
       let query = `
         SELECT 
           COUNT(*) as total_orders,
@@ -1307,13 +1317,10 @@ class DatabaseHelper {
           SUM(CASE WHEN synced = 0 THEN 1 ELSE 0 END) as unsynced_orders,
           SUM(total_amount) as total_amount
         FROM orders
+        WHERE salesman_id = ?
       `;
       
-      const params = [];
-      if (salesmanId) {
-        query += ' WHERE salesman_id = ?';
-        params.push(salesmanId);
-      }
+      const params = [salesmanId];
       
       const result = await this.selectQuery(query, params);
       return result[0] || {};

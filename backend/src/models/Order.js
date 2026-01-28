@@ -194,12 +194,57 @@ const Order = {
       
       console.log('🔍 [BACKEND MODEL] Executing INSERT query...');
       try {
-        [orderResult] = await connection.query(
-          `INSERT INTO orders 
-           (order_number, salesman_id, shop_id, route_id, order_date, total_amount, discount, net_amount, status, notes, synced_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
-          insertParams
-        );
+        // Get default warehouse_id (use warehouse_id from orderData if provided, else get default warehouse)
+        let warehouse_id = orderData.warehouse_id || null;
+        if (!warehouse_id) {
+          console.log('🔍 [BACKEND MODEL] No warehouse_id provided, fetching default warehouse...');
+          try {
+            // SQLite uses 1/0 for boolean, MySQL uses TRUE/FALSE - use 1 for compatibility
+            const [defaultWarehouse] = await connection.query(
+              `SELECT id FROM warehouses WHERE (is_default = 1 OR is_default = ${useSQLite ? "'1'" : 'TRUE'}) AND status = ? ORDER BY is_default DESC LIMIT 1`,
+              ['active']
+            );
+            if (defaultWarehouse && defaultWarehouse.length > 0) {
+              warehouse_id = defaultWarehouse[0].id;
+              console.log('✅ [BACKEND MODEL] Using default/active warehouse ID:', warehouse_id);
+            } else {
+              // If no active warehouse found, try any warehouse
+              const [anyWarehouse] = await connection.query('SELECT id FROM warehouses LIMIT 1');
+              if (anyWarehouse && anyWarehouse.length > 0) {
+                warehouse_id = anyWarehouse[0].id;
+                console.log('✅ [BACKEND MODEL] Using first available warehouse ID:', warehouse_id);
+              } else {
+                console.log('⚠️ [BACKEND MODEL] No warehouses found, warehouse_id will be NULL');
+              }
+            }
+          } catch (whError) {
+            console.warn('⚠️ [BACKEND MODEL] Could not fetch default warehouse:', whError.message);
+          }
+        }
+        
+        // Use module-level useSQLite variable (declared at line 11)
+        
+        let insertQuery, insertParams;
+        
+        if (useSQLite) {
+          // SQLite schema: no route_id, no synced_at, uses discount_amount instead of discount
+          console.log('🔍 [BACKEND MODEL] Using SQLite schema (no route_id, no synced_at)');
+          insertParams = [order_number, salesman_id, shop_id, warehouse_id, mysqlOrderDate, total_amount, discount, net_amount, status, notes];
+          insertQuery = `INSERT INTO orders 
+           (order_number, salesman_id, shop_id, warehouse_id, order_date, total_amount, discount_amount, net_amount, status, notes)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+        } else {
+          // MySQL schema: has route_id, synced_at, uses discount
+          console.log('🔍 [BACKEND MODEL] Using MySQL schema (with route_id, synced_at)');
+          insertParams = [order_number, salesman_id, shop_id, warehouse_id, route_id, mysqlOrderDate, total_amount, discount, net_amount, status, notes];
+          insertQuery = `INSERT INTO orders 
+           (order_number, salesman_id, shop_id, warehouse_id, route_id, order_date, total_amount, discount, net_amount, status, notes, synced_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`;
+        }
+        
+        console.log('🔍 [BACKEND MODEL] Insert params:', insertParams);
+        
+        [orderResult] = await connection.query(insertQuery, insertParams);
         console.log('✅ [BACKEND MODEL] INSERT query executed successfully');
         console.log('🔍 [BACKEND MODEL] Insert result:', JSON.stringify(orderResult, null, 2));
       } catch (insertError) {
@@ -220,42 +265,81 @@ const Order = {
       if (items && items.length > 0) {
         console.log(`\n🔍 [BACKEND MODEL] Preparing to insert ${items.length} order items...`);
         try {
-          const detailValues = items.map((item, index) => {
-            console.log(`🔍 [BACKEND MODEL] Validating Item ${index + 1}:`, JSON.stringify(item));
-            
-            // Validate item
-            if (!item.product_id) {
-              throw new Error(`Item ${index + 1}: product_id is required`);
-            }
-            if (!item.quantity) {
-              throw new Error(`Item ${index + 1}: quantity is required`);
-            }
-            if (item.unit_price === undefined || item.unit_price === null) {
-              throw new Error(`Item ${index + 1}: unit_price is required`);
-            }
-            
-            return [
-              orderId,
-              item.product_id,
-              item.quantity,
-              item.unit_price,
-              item.total_price,
-              item.discount || 0,
-              item.net_price
-            ];
-          });
+          // Use module-level useSQLite variable (declared at line 11)
           
-          console.log('🔍 [BACKEND MODEL] All items validated successfully');
-          console.log(`🔍 [BACKEND MODEL] Executing batch INSERT for ${ORDER_DETAILS_TABLE}...`);
+          if (useSQLite) {
+            // SQLite: Insert items one by one (no batch VALUES ? support)
+            // SQLite schema: has discount_percentage, no net_price, no discount column
+            console.log('🔍 [BACKEND MODEL] Using SQLite - inserting items individually');
+            for (let i = 0; i < items.length; i++) {
+              const item = items[i];
+              console.log(`🔍 [BACKEND MODEL] Inserting Item ${i + 1}/${items.length}:`, JSON.stringify(item));
+              
+              // Validate item
+              if (!item.product_id) {
+                throw new Error(`Item ${i + 1}: product_id is required`);
+              }
+              if (!item.quantity) {
+                throw new Error(`Item ${i + 1}: quantity is required`);
+              }
+              if (item.unit_price === undefined || item.unit_price === null) {
+                throw new Error(`Item ${i + 1}: unit_price is required`);
+              }
+              
+              // Calculate discount_percentage from discount amount
+              const discount_percentage = item.discount && item.total_price > 0 
+                ? (item.discount / item.total_price) * 100 
+                : 0;
+              
+              await connection.query(
+                `INSERT INTO ${ORDER_DETAILS_TABLE} 
+                 (order_id, product_id, quantity, unit_price, total_price, discount_percentage)
+                 VALUES (?, ?, ?, ?, ?, ?)`,
+                [orderId, item.product_id, item.quantity, item.unit_price, item.total_price, discount_percentage]
+              );
+            }
+            console.log('✅ [BACKEND MODEL] All order items inserted successfully (SQLite)');
+          } else {
+            // MySQL: Batch insert with VALUES ?
+            // MySQL schema: has discount and net_price columns
+            console.log('🔍 [BACKEND MODEL] Using MySQL - batch inserting items');
+            const detailValues = items.map((item, index) => {
+              console.log(`🔍 [BACKEND MODEL] Validating Item ${index + 1}:`, JSON.stringify(item));
+              
+              // Validate item
+              if (!item.product_id) {
+                throw new Error(`Item ${index + 1}: product_id is required`);
+              }
+              if (!item.quantity) {
+                throw new Error(`Item ${index + 1}: quantity is required`);
+              }
+              if (item.unit_price === undefined || item.unit_price === null) {
+                throw new Error(`Item ${index + 1}: unit_price is required`);
+              }
+              
+              return [
+                orderId,
+                item.product_id,
+                item.quantity,
+                item.unit_price,
+                item.total_price,
+                item.discount || 0,
+                item.net_price
+              ];
+            });
+            
+            console.log('🔍 [BACKEND MODEL] All items validated successfully');
+            console.log(`🔍 [BACKEND MODEL] Executing batch INSERT for ${ORDER_DETAILS_TABLE}...`);
 
-          const [detailResult] = await connection.query(
-            `INSERT INTO ${ORDER_DETAILS_TABLE} 
-             (order_id, product_id, quantity, unit_price, total_price, discount, net_price)
-             VALUES ?`,
-            [detailValues]
-          );
-          console.log('✅ [BACKEND MODEL] Order details inserted successfully');
-          console.log('🔍 [BACKEND MODEL] Details insert result:', JSON.stringify(detailResult, null, 2));
+            const [detailResult] = await connection.query(
+              `INSERT INTO ${ORDER_DETAILS_TABLE} 
+               (order_id, product_id, quantity, unit_price, total_price, discount, net_price)
+               VALUES ?`,
+              [detailValues]
+            );
+            console.log('✅ [BACKEND MODEL] Order details inserted successfully (MySQL)');
+            console.log('🔍 [BACKEND MODEL] Details insert result:', JSON.stringify(detailResult, null, 2));
+          }
         } catch (detailError) {
           console.error('❌❌❌ [BACKEND MODEL] ORDER DETAILS INSERT FAILED ❌❌❌');
           console.error('🔍 [BACKEND MODEL] Detail error:', detailError.message);
@@ -267,13 +351,13 @@ const Order = {
         console.log('⚠️  [BACKEND MODEL] No items to insert');
       }
 
-      console.log('\n🔍 [BACKEND MODEL] Reserving stock for order BEFORE committing...');
-      // Reserve stock INLINE within this transaction (not via stored procedure)
-      // CRITICAL: Must use same connection/transaction to avoid deadlock
-      // If reservation fails, entire order creation will be rolled back
+      console.log('\n🔍 [BACKEND MODEL] Deducting stock for order BEFORE committing...');
+      // CRITICAL: Deduct stock INLINE within this transaction
+      // This ensures inventory is properly tracked when orders are created
+      // If deduction fails, entire order creation will be rolled back
       
       for (const item of items) {
-        // Get current stock levels
+        // Get current stock levels from products table
         const [stockCheck] = await connection.query(
           'SELECT stock_quantity, product_name FROM products WHERE id = ?',
           [item.product_id]
@@ -294,17 +378,62 @@ const Order = {
           );
         }
         
-        // Stock validation passed - no reservation needed (reserved_stock column doesn't exist)
-        // Stock movement logging removed (table structure mismatch)
+        // ================================================================
+        // DEDUCT STOCK FROM PRODUCTS TABLE
+        // ================================================================
+        console.log(`📦 [STOCK] Deducting ${item.quantity} units of ${product.product_name} from global stock`);
+        await connection.query(
+          'UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?',
+          [item.quantity, item.product_id]
+        );
+        console.log(`✅ [STOCK] Global stock updated: ${available} -> ${available - item.quantity}`);
+        
+        // ================================================================
+        // DEDUCT STOCK FROM WAREHOUSE_STOCK TABLE (if warehouse assigned)
+        // ================================================================
+        if (warehouse_id) {
+          // Check if product exists in this warehouse
+          const [warehouseStock] = await connection.query(
+            'SELECT id, quantity, reserved_quantity FROM warehouse_stock WHERE warehouse_id = ? AND product_id = ?',
+            [warehouse_id, item.product_id]
+          );
+          
+          if (warehouseStock && warehouseStock.length > 0) {
+            const wsRecord = warehouseStock[0];
+            const wsAvailable = wsRecord.quantity - (wsRecord.reserved_quantity || 0);
+            
+            if (wsAvailable >= item.quantity) {
+              // Deduct from warehouse stock
+              console.log(`🏪 [WAREHOUSE] Deducting ${item.quantity} units from warehouse ${warehouse_id}`);
+              await connection.query(`
+                UPDATE warehouse_stock 
+                SET quantity = quantity - ?,
+                    last_updated = ${useSQLite ? "datetime('now')" : 'NOW()'}
+                WHERE warehouse_id = ? AND product_id = ?
+              `, [item.quantity, warehouse_id, item.product_id]);
+              console.log(`✅ [WAREHOUSE] Warehouse stock updated: ${wsRecord.quantity} -> ${wsRecord.quantity - item.quantity}`);
+            } else {
+              console.log(`⚠️ [WAREHOUSE] Insufficient warehouse stock (${wsAvailable}), but global stock OK. Allowing order.`);
+            }
+          } else {
+            console.log(`⚠️ [WAREHOUSE] Product ${item.product_id} not in warehouse ${warehouse_id}, but global stock OK. Allowing order.`);
+          }
+        }
       }
       
-      // Mark order as having stock reserved
-      await connection.query(
-        'UPDATE orders SET stock_reserved = TRUE WHERE id = ?',
-        [orderId]
-      );
+      // Mark order as having stock deducted (only for MySQL, SQLite doesn't have this column)
+      // Use module-level useSQLite variable (line 11)
+      if (!useSQLite) {
+        await connection.query(
+          'UPDATE orders SET stock_reserved = TRUE WHERE id = ?',
+          [orderId]
+        );
+        console.log('✅ [BACKEND MODEL] Stock deducted flag set');
+      } else {
+        console.log('ℹ️  [BACKEND MODEL] SQLite mode - skipping stock_reserved flag');
+      }
       
-      console.log('✅ [BACKEND MODEL] Stock reserved successfully');
+      console.log('✅ [BACKEND MODEL] Stock deducted successfully');
 
       console.log('\n🔍 [BACKEND MODEL] Committing transaction...');
       try {
@@ -366,10 +495,10 @@ const Order = {
         sh.shop_name,
         sh.owner_name,
         COUNT(od.id) as items_count,
-        GROUP_CONCAT(
-          p.product_name || ' (' || od.quantity || ')' 
-          ${useSQLite ? '' : "SEPARATOR ', '"}
-        ) as products_summary
+        ${useSQLite 
+          ? `GROUP_CONCAT(p.product_name || ' (' || od.quantity || ')', ', ')`
+          : `GROUP_CONCAT(CONCAT(p.product_name, ' (', od.quantity, ')') SEPARATOR ', ')`
+        } as products_summary
       FROM orders o
       LEFT JOIN salesmen s ON o.salesman_id = s.id
       LEFT JOIN shops sh ON o.shop_id = sh.id
@@ -402,6 +531,12 @@ const Order = {
     if (shop_id) {
       query += ` AND o.shop_id = ?`;
       params.push(shop_id);
+    }
+
+    // Route filter (only for MySQL, SQLite doesn't have route_id)
+    if (route_id && !useSQLite) {
+      query += ` AND o.route_id = ?`;
+      params.push(route_id);
     }
 
     // Date range filter
@@ -756,26 +891,36 @@ const Order = {
     console.log(`🔄 [MODEL] Updating order ${id} status to '${newStatus}'`);
     
     try {
-      // Update order status
-      await db.query(
-        `UPDATE orders 
-         SET status = ?, 
-             notes = CONCAT(IFNULL(notes, ''), '\n[', NOW(), '] Status changed to ${newStatus}: ', ?),
-             updated_at = NOW()
-         WHERE id = ?`,
-        [newStatus, notes, id]
-      );
+      // SQLite-compatible status update
+      if (useSQLite) {
+        await db.query(
+          `UPDATE orders 
+           SET status = ?, 
+               notes = COALESCE(notes, '') || '\n[' || datetime('now') || '] Status changed to ${newStatus}: ' || ?,
+               updated_at = datetime('now')
+           WHERE id = ?`,
+          [newStatus, notes, id]
+        );
+      } else {
+        await db.query(
+          `UPDATE orders 
+           SET status = ?, 
+               notes = CONCAT(IFNULL(notes, ''), '\n[', NOW(), '] Status changed to ${newStatus}: ', ?),
+               updated_at = NOW()
+           WHERE id = ?`,
+          [newStatus, notes, id]
+        );
+      }
 
-      // If order is rejected or cancelled, release reserved stock
+      // If order is rejected or cancelled, RESTORE stock to products and warehouse
       if (['rejected', 'cancelled'].includes(newStatus)) {
-        console.log(`🔓 [MODEL] Releasing reserved stock for ${newStatus} order ${id}...`);
+        console.log(`🔓 [MODEL] Restoring stock for ${newStatus} order ${id}...`);
         try {
-          const Product = require('./Product');
-          await Product.releaseReservedStock(id, null);
-          console.log(`✅ [MODEL] Reserved stock released for order ${id}`);
+          await this.restoreStockForOrder(id);
+          console.log(`✅ [MODEL] Stock restored for order ${id}`);
         } catch (stockError) {
-          console.error(`⚠️  [MODEL] Failed to release stock for order ${id}:`, stockError.message);
-          // Continue even if stock release fails - can be handled manually
+          console.error(`⚠️  [MODEL] Failed to restore stock for order ${id}:`, stockError.message);
+          // Continue even if stock restore fails - can be handled manually
         }
       }
 
@@ -866,6 +1011,91 @@ const Order = {
     } catch (error) {
       console.error('❌ [MODEL] Error finalizing order:', error);
       throw error;
+    }
+  },
+
+  /**
+   * Restore stock when order is cancelled or rejected
+   * Adds back the quantities to both products table and warehouse_stock table
+   */
+  async restoreStockForOrder(orderId) {
+    console.log(`🔄 [STOCK RESTORE] Starting stock restoration for order ${orderId}...`);
+    
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      
+      // Get order details including warehouse_id
+      const [orderRows] = await connection.query(
+        'SELECT id, warehouse_id FROM orders WHERE id = ?',
+        [orderId]
+      );
+      
+      if (!orderRows || orderRows.length === 0) {
+        throw new Error(`Order ${orderId} not found`);
+      }
+      
+      const order = orderRows[0];
+      const warehouse_id = order.warehouse_id;
+      
+      // Get all order items
+      const [items] = await connection.query(
+        `SELECT oi.product_id, oi.quantity, p.product_name 
+         FROM ${ORDER_DETAILS_TABLE} oi
+         INNER JOIN products p ON oi.product_id = p.id
+         WHERE oi.order_id = ?`,
+        [orderId]
+      );
+      
+      if (!items || items.length === 0) {
+        console.log(`⚠️ [STOCK RESTORE] No items found for order ${orderId}`);
+        await connection.commit();
+        return;
+      }
+      
+      console.log(`📦 [STOCK RESTORE] Restoring stock for ${items.length} items...`);
+      
+      for (const item of items) {
+        // ================================================================
+        // RESTORE STOCK TO PRODUCTS TABLE
+        // ================================================================
+        console.log(`📦 [STOCK RESTORE] Restoring ${item.quantity} units of ${item.product_name} to global stock`);
+        await connection.query(
+          'UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?',
+          [item.quantity, item.product_id]
+        );
+        
+        // ================================================================
+        // RESTORE STOCK TO WAREHOUSE_STOCK TABLE (if warehouse was assigned)
+        // ================================================================
+        if (warehouse_id) {
+          // Check if product exists in this warehouse
+          const [warehouseStock] = await connection.query(
+            'SELECT id FROM warehouse_stock WHERE warehouse_id = ? AND product_id = ?',
+            [warehouse_id, item.product_id]
+          );
+          
+          if (warehouseStock && warehouseStock.length > 0) {
+            console.log(`🏪 [STOCK RESTORE] Restoring ${item.quantity} units to warehouse ${warehouse_id}`);
+            await connection.query(`
+              UPDATE warehouse_stock 
+              SET quantity = quantity + ?,
+                  last_updated = ${useSQLite ? "datetime('now')" : 'NOW()'}
+              WHERE warehouse_id = ? AND product_id = ?
+            `, [item.quantity, warehouse_id, item.product_id]);
+          }
+        }
+      }
+      
+      await connection.commit();
+      console.log(`✅ [STOCK RESTORE] Stock restored successfully for order ${orderId}`);
+      
+    } catch (error) {
+      await connection.rollback();
+      console.error(`❌ [STOCK RESTORE] Error restoring stock for order ${orderId}:`, error);
+      throw error;
+    } finally {
+      connection.release();
     }
   }
 };

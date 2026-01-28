@@ -20,6 +20,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import shopService from '../services/shopService';
 import routeService from '../services/routeService';
 import syncService from '../services/syncService';
@@ -45,12 +46,30 @@ const ShopListingScreen = ({ navigation }) => {
     try {
       setLoading(true);
       
+      // Get current user's route_id for filtering (salesman isolation)
+      const userStr = await AsyncStorage.getItem('user');
+      let userRouteId = null;
+      if (userStr) {
+        const user = JSON.parse(userStr);
+        // If user is salesman (role_id = 3), filter by their route
+        if (user.role_id === 3) {
+          const salesmanStr = await AsyncStorage.getItem('salesman');
+          if (salesmanStr) {
+            const salesman = JSON.parse(salesmanStr);
+            userRouteId = salesman.route_id;
+            console.log(`🔒 [ISOLATION] Filtering shops for salesman's route: ${userRouteId}`);
+          }
+        }
+      }
+      
       // Load routes (hybrid mode: server first, then cache)
       const routesData = await routeService.getRoutes();
       setRoutes(routesData);
       
       // Load shops (hybrid mode: server first, then cache)
-      const shopsData = await shopService.getShops();
+      // Apply route filter for salesman isolation
+      const filters = userRouteId ? { routeId: userRouteId } : {};
+      const shopsData = await shopService.getShops(filters);
       setShops(shopsData);
       setFilteredShops(shopsData);
       

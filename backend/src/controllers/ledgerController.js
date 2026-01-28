@@ -390,4 +390,72 @@ exports.getShopPaymentSummary = async (req, res) => {
   }
 };
 
+/**
+ * Recalculate shop ledger balances
+ * POST /api/desktop/ledger/shop/:shopId/recalculate
+ * Admin/Manager only
+ */
+exports.recalculateBalances = async (req, res) => {
+  try {
+    const { shopId } = req.params;
+    
+    console.log(`🔄 [LEDGER CONTROLLER] Recalculating balances for shop ${shopId}...`);
+    
+    const result = await ShopLedger.recalculateBalances(shopId);
+    
+    res.json({
+      success: true,
+      message: `Recalculated ${result.entries_updated} ledger entries`,
+      data: result
+    });
+  } catch (error) {
+    console.error('❌ [LEDGER CONTROLLER] Error recalculating balances:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to recalculate balances',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Clear shop transaction history
+ * DELETE /api/desktop/ledger/shop/:shopId/history
+ * Admin only - clears ledger entries but preserves shop and invoice data
+ */
+exports.clearTransactionHistory = async (req, res) => {
+  try {
+    const { shopId } = req.params;
+    const { retain_opening_balance } = req.body;
+    
+    // Only admins can clear transaction history
+    const userRole = req.user.role_name || req.user.role;
+    if (userRole !== 'admin' && userRole !== 'Admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only administrators can clear transaction history'
+      });
+    }
+    
+    console.log(`🗑️ [LEDGER CONTROLLER] Clearing history for shop ${shopId} (retain_balance: ${retain_opening_balance})...`);
+    
+    const result = await ShopLedger.clearTransactionHistory(shopId, { 
+      retain_opening_balance: retain_opening_balance === true 
+    });
+    
+    res.json({
+      success: true,
+      message: result.message,
+      data: result
+    });
+  } catch (error) {
+    console.error('❌ [LEDGER CONTROLLER] Error clearing transaction history:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to clear transaction history',
+      error: error.message
+    });
+  }
+};
+
 module.exports = exports;

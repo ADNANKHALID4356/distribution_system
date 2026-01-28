@@ -1,13 +1,25 @@
 import axios from 'axios';
-import { BACKEND_URL } from '../config/api';
+import { getServerUrl, getServerConfig } from '../utils/serverConfig';
 
-// Create axios instance with centralized backend URL
+// Get initial URL from serverConfig (single source of truth)
+const initialUrl = getServerUrl();
+
+// Create axios instance with dynamic backend URL from serverConfig
 const api = axios.create({
-  baseURL: BACKEND_URL,
+  baseURL: initialUrl,
   headers: {
     'Content-Type': 'application/json',
   }
 });
+
+// Update baseURL before each request (in case config changed)
+api.interceptors.request.use(
+  (config) => {
+    config.baseURL = getServerUrl();
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
 
 // Add token to requests if available
 api.interceptors.request.use(

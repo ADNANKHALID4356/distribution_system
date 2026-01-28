@@ -28,6 +28,294 @@ const db = new Database(dbPath, {
 // Enable foreign keys
 db.pragma('foreign_keys = ON');
 
+// Helper function to check if column exists
+function columnExists(tableName, columnName) {
+  try {
+    const columns = db.pragma(`table_info(${tableName})`);
+    return columns.some(col => col.name === columnName);
+  } catch (e) {
+    return false;
+  }
+}
+
+// Helper function to safely add column
+function safeAddColumn(tableName, columnName, columnDef) {
+  if (!columnExists(tableName, columnName)) {
+    try {
+      db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDef}`);
+      console.log(`  ✅ Added column ${columnName} to ${tableName}`);
+      return true;
+    } catch (e) {
+      console.log(`  ⚠️ Could not add ${columnName} to ${tableName}: ${e.message}`);
+      return false;
+    }
+  }
+  return false;
+}
+
+// Migrate deliveries table to add missing columns for professional challan management
+function migrateDeliveriesTable() {
+  console.log('🔄 Checking deliveries table schema...');
+  
+  // First, check if order_id has NOT NULL constraint and fix it
+  try {
+    const tableInfo = db.pragma('table_info(deliveries)');
+    const orderIdCol = tableInfo.find(col => col.name === 'order_id');
+    
+    if (orderIdCol && orderIdCol.notnull === 1) {
+      console.log('🔄 Fixing order_id NOT NULL constraint in deliveries table...');
+      
+      // SQLite doesn't support ALTER COLUMN, so we need to recreate the table
+      db.exec('BEGIN TRANSACTION');
+      
+      try {
+        // First drop the view that depends on deliveries
+        db.exec('DROP VIEW IF EXISTS v_dashboard_stats');
+        
+        // Create a new table with correct schema
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS deliveries_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            challan_number TEXT UNIQUE NOT NULL,
+            invoice_id INTEGER,
+            order_id INTEGER,
+            warehouse_id INTEGER,
+            load_sheet_id INTEGER,
+            delivery_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+            expected_delivery_time TEXT,
+            driver_name TEXT,
+            driver_phone TEXT,
+            driver_cnic TEXT,
+            vehicle_number TEXT,
+            vehicle_type TEXT,
+            shop_id INTEGER,
+            shop_name TEXT,
+            shop_address TEXT,
+            shop_contact TEXT,
+            delivery_address TEXT,
+            route_id INTEGER,
+            route_name TEXT,
+            salesman_id INTEGER,
+            salesman_name TEXT,
+            receiver_name TEXT,
+            receiver_signature TEXT,
+            status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'in_transit', 'delivered', 'returned', 'cancelled')),
+            total_items INTEGER DEFAULT 0,
+            total_quantity REAL DEFAULT 0,
+            total_amount REAL DEFAULT 0,
+            subtotal REAL DEFAULT 0,
+            discount_percentage REAL DEFAULT 0,
+            discount_amount REAL DEFAULT 0,
+            tax_percentage REAL DEFAULT 0,
+            tax_amount REAL DEFAULT 0,
+            shipping_charges REAL DEFAULT 0,
+            other_charges REAL DEFAULT 0,
+            round_off REAL DEFAULT 0,
+            grand_total REAL DEFAULT 0,
+            notes TEXT,
+            created_by INTEGER,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (invoice_id) REFERENCES invoices(id),
+            FOREIGN KEY (order_id) REFERENCES orders(id),
+            FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
+            FOREIGN KEY (load_sheet_id) REFERENCES load_sheets(id),
+            FOREIGN KEY (shop_id) REFERENCES shops(id),
+            FOREIGN KEY (route_id) REFERENCES routes(id),
+            FOREIGN KEY (created_by) REFERENCES users(id)
+          )
+        `);
+        
+        // Copy data from old table to new table
+        db.exec(`
+          INSERT INTO deliveries_new 
+          SELECT id, challan_number, invoice_id, order_id, warehouse_id, load_sheet_id,
+                 delivery_date, expected_delivery_time, driver_name, driver_phone, driver_cnic,
+                 vehicle_number, vehicle_type, shop_id, shop_name, shop_address, shop_contact,
+                 delivery_address, route_id, route_name, salesman_id, salesman_name,
+                 receiver_name, receiver_signature, status, total_items, total_quantity,
+                 total_amount, subtotal, discount_percentage, discount_amount, tax_percentage,
+                 tax_amount, shipping_charges, other_charges, round_off, grand_total,
+                 notes, created_by, created_at, updated_at
+          FROM deliveries
+        `);
+        
+        // Drop old table and rename new one
+        db.exec('DROP TABLE deliveries');
+        db.exec('ALTER TABLE deliveries_new RENAME TO deliveries');
+        
+        // Recreate the view
+        db.exec(`
+          CREATE VIEW IF NOT EXISTS v_dashboard_stats AS
+          SELECT 
+            (SELECT COUNT(*) FROM products) as total_products,
+            (SELECT COUNT(*) FROM products WHERE is_active = 1) as active_products,
+            (SELECT COUNT(*) FROM products WHERE stock_quantity <= reorder_level) as low_stock_count,
+            (SELECT COUNT(*) FROM suppliers) as total_suppliers,
+            (SELECT COUNT(*) FROM suppliers WHERE is_active = 1) as active_suppliers,
+            (SELECT COUNT(*) FROM shops) as total_shops,
+            (SELECT COUNT(*) FROM shops WHERE is_active = 1) as active_shops,
+            (SELECT COUNT(*) FROM routes) as total_routes,
+            (SELECT COUNT(*) FROM routes WHERE is_active = 1) as active_routes,
+            (SELECT COUNT(*) FROM salesmen) as total_salesmen,
+            (SELECT COUNT(*) FROM salesmen WHERE is_active = 1) as active_salesmen,
+            (SELECT COUNT(*) FROM warehouses) as total_warehouses,
+            (SELECT COUNT(*) FROM warehouses WHERE status = 'active') as active_warehouses,
+            (SELECT COUNT(*) FROM orders) as total_orders,
+            (SELECT COUNT(*) FROM orders WHERE status = 'placed') as pending_orders,
+            (SELECT COUNT(*) FROM orders WHERE status = 'delivered') as completed_orders,
+            (SELECT COUNT(*) FROM deliveries) as total_deliveries,
+            (SELECT COUNT(*) FROM deliveries WHERE status = 'pending') as pending_deliveries,
+            (SELECT COUNT(*) FROM deliveries WHERE status = 'in_transit') as in_transit_deliveries,
+            (SELECT COUNT(*) FROM deliveries WHERE status = 'delivered') as delivered_deliveries,
+            (SELECT COUNT(*) FROM invoices) as total_invoices,
+            (SELECT COUNT(*) FROM invoices WHERE status = 'unpaid') as unpaid_invoices,
+            (SELECT COUNT(*) FROM invoices WHERE status = 'paid') as paid_invoices,
+            (SELECT COUNT(*) FROM invoices WHERE status = 'partial') as partial_invoices,
+            (SELECT COUNT(*) FROM load_sheets) as total_load_sheets,
+            (SELECT COUNT(*) FROM load_sheets WHERE status = 'draft') as draft_load_sheets,
+            (SELECT COUNT(*) FROM load_sheets WHERE status = 'loaded') as loaded_load_sheets,
+            (SELECT COUNT(*) FROM load_sheets WHERE status = 'in_transit') as in_transit_load_sheets,
+            0 as total_reserved_stock,
+            0 as fully_reserved_count
+        `);
+        
+        db.exec('COMMIT');
+        console.log('✅ Fixed order_id constraint - now allows NULL for invoice-based deliveries');
+      } catch (migrationError) {
+        db.exec('ROLLBACK');
+        console.log('⚠️ Migration error, continuing with existing schema:', migrationError.message);
+      }
+    }
+  } catch (e) {
+    console.log('⚠️ Could not check order_id constraint:', e.message);
+  }
+  
+  // Add missing columns to deliveries table
+  const deliveryColumns = [
+    ['invoice_id', 'INTEGER'],
+    ['warehouse_id', 'INTEGER'],
+    ['expected_delivery_time', 'TEXT'],
+    ['driver_name', 'TEXT'],
+    ['driver_phone', 'TEXT'],
+    ['driver_cnic', 'TEXT'],
+    ['vehicle_number', 'TEXT'],
+    ['vehicle_type', 'TEXT'],
+    ['shop_id', 'INTEGER'],
+    ['shop_name', 'TEXT'],
+    ['shop_address', 'TEXT'],
+    ['shop_contact', 'TEXT'],
+    ['delivery_address', 'TEXT'],
+    ['route_id', 'INTEGER'],
+    ['route_name', 'TEXT'],
+    ['salesman_id', 'INTEGER'],
+    ['salesman_name', 'TEXT'],
+    ['total_items', 'INTEGER DEFAULT 0'],
+    ['total_quantity', 'REAL DEFAULT 0'],
+    ['total_amount', 'REAL DEFAULT 0'],
+    ['subtotal', 'REAL DEFAULT 0'],
+    ['discount_percentage', 'REAL DEFAULT 0'],
+    ['discount_amount', 'REAL DEFAULT 0'],
+    ['tax_percentage', 'REAL DEFAULT 0'],
+    ['tax_amount', 'REAL DEFAULT 0'],
+    ['shipping_charges', 'REAL DEFAULT 0'],
+    ['other_charges', 'REAL DEFAULT 0'],
+    ['round_off', 'REAL DEFAULT 0'],
+    ['grand_total', 'REAL DEFAULT 0'],
+    ['created_by', 'INTEGER']
+  ];
+  
+  let columnsAdded = 0;
+  for (const [colName, colDef] of deliveryColumns) {
+    if (safeAddColumn('deliveries', colName, colDef)) {
+      columnsAdded++;
+    }
+  }
+  
+  // Add missing columns to delivery_items table
+  const itemColumns = [
+    ['product_name', 'TEXT'],
+    ['product_code', 'TEXT'],
+    ['quantity_returned', 'INTEGER DEFAULT 0'],
+    ['discount_percentage', 'REAL DEFAULT 0'],
+    ['discount_amount', 'REAL DEFAULT 0'],
+    ['tax_percentage', 'REAL DEFAULT 0'],
+    ['tax_amount', 'REAL DEFAULT 0'],
+    ['net_amount', 'REAL DEFAULT 0'],
+    ['batch_number', 'TEXT'],
+    ['expiry_date', 'DATE'],
+    ['notes', 'TEXT']
+  ];
+  
+  for (const [colName, colDef] of itemColumns) {
+    if (safeAddColumn('delivery_items', colName, colDef)) {
+      columnsAdded++;
+    }
+  }
+  
+  // Make order_id nullable in deliveries (if it was NOT NULL before)
+  // SQLite doesn't support ALTER COLUMN, but new entries can be NULL anyway
+  
+  if (columnsAdded > 0) {
+    console.log(`✅ Deliveries schema migration complete - added ${columnsAdded} columns`);
+  } else {
+    console.log('✅ Deliveries schema is up to date');
+  }
+}
+
+// Migrate warehouses table to add missing columns for professional warehouse management
+function migrateWarehousesTable() {
+  console.log('🔄 Checking warehouses table schema...');
+  
+  const warehouseColumns = [
+    ['code', 'TEXT'],  // Can't add UNIQUE via ALTER TABLE in SQLite
+    ['address', 'TEXT'],
+    ['city', 'TEXT'],
+    ['area', 'TEXT'],
+    ['postal_code', 'TEXT'],
+    ['manager_phone', 'TEXT'],
+    ['contact_number', 'TEXT'],
+    ['email', 'TEXT'],
+    ['capacity', 'INTEGER DEFAULT 0'],
+    ['storage_type', 'TEXT DEFAULT \'general\''],
+    ['notes', 'TEXT'],
+    ['created_by', 'INTEGER']
+  ];
+  
+  let columnsAdded = 0;
+  for (const [colName, colDef] of warehouseColumns) {
+    if (safeAddColumn('warehouses', colName, colDef)) {
+      columnsAdded++;
+    }
+  }
+  
+  // Also add missing columns to warehouse_stock for better inventory tracking
+  const stockColumns = [
+    ['reserved_quantity', 'INTEGER DEFAULT 0'],
+    ['min_stock_level', 'INTEGER DEFAULT 0'],
+    ['max_stock_level', 'INTEGER DEFAULT 0'],
+    ['reorder_point', 'INTEGER DEFAULT 0'],
+    ['location_in_warehouse', 'TEXT'],
+    ['batch_number', 'TEXT'],
+    ['expiry_date', 'DATE'],
+    ['notes', 'TEXT'],
+    ['created_by', 'INTEGER'],
+    ['created_at', 'DATETIME DEFAULT CURRENT_TIMESTAMP']
+  ];
+  
+  for (const [colName, colDef] of stockColumns) {
+    if (safeAddColumn('warehouse_stock', colName, colDef)) {
+      columnsAdded++;
+    }
+  }
+  
+  if (columnsAdded > 0) {
+    console.log(`✅ Warehouses schema migration complete - added ${columnsAdded} columns`);
+  } else {
+    console.log('✅ Warehouses schema is up to date');
+  }
+}
+
 // Initialize database schema
 function initializeDatabase() {
   console.log('🔧 Initializing database schema...');
@@ -111,18 +399,31 @@ function initializeDatabase() {
     )
   `);
 
-  // Warehouses table
+  // Warehouses table (Professional warehouse management)
   db.exec(`
     CREATE TABLE IF NOT EXISTS warehouses (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
+      code TEXT UNIQUE,
+      address TEXT,
+      city TEXT,
+      area TEXT,
+      postal_code TEXT,
       location TEXT,
       manager_name TEXT,
+      manager_phone TEXT,
+      contact_number TEXT,
       contact TEXT,
+      email TEXT,
+      capacity INTEGER DEFAULT 0,
+      storage_type TEXT DEFAULT 'general' CHECK(storage_type IN ('general', 'cold', 'hazardous', 'bonded')),
       status TEXT DEFAULT 'active' CHECK(status IN ('active', 'inactive')),
       is_default INTEGER DEFAULT 0,
+      notes TEXT,
+      created_by INTEGER,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (created_by) REFERENCES users(id)
     )
   `);
 
@@ -159,6 +460,7 @@ function initializeDatabase() {
       pieces_per_carton INTEGER DEFAULT 1,
       purchase_price REAL,
       stock_quantity REAL DEFAULT 0,
+      reserved_stock REAL DEFAULT 0,
       reorder_level REAL DEFAULT 0,
       supplier_id INTEGER,
       barcode TEXT,
@@ -172,16 +474,27 @@ function initializeDatabase() {
     )
   `);
 
-  // Warehouse Stock table
+  // Warehouse Stock table (Professional inventory management per warehouse)
   db.exec(`
     CREATE TABLE IF NOT EXISTS warehouse_stock (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       warehouse_id INTEGER NOT NULL,
       product_id INTEGER NOT NULL,
       quantity INTEGER DEFAULT 0,
+      reserved_quantity INTEGER DEFAULT 0,
+      min_stock_level INTEGER DEFAULT 0,
+      max_stock_level INTEGER DEFAULT 0,
+      reorder_point INTEGER DEFAULT 0,
+      location_in_warehouse TEXT,
+      batch_number TEXT,
+      expiry_date DATE,
+      notes TEXT,
+      created_by INTEGER,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON DELETE CASCADE,
       FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+      FOREIGN KEY (created_by) REFERENCES users(id),
       UNIQUE(warehouse_id, product_id)
     )
   `);
@@ -220,6 +533,7 @@ function initializeDatabase() {
       credit_limit REAL DEFAULT 0,
       current_balance REAL DEFAULT 0,
       opening_balance REAL DEFAULT 0,
+      last_transaction_date DATETIME,
       latitude REAL,
       longitude REAL,
       shop_type TEXT,
@@ -301,35 +615,81 @@ function initializeDatabase() {
     )
   `);
 
-  // Deliveries table
+  // Deliveries table (Professional delivery challan management)
   db.exec(`
     CREATE TABLE IF NOT EXISTS deliveries (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       challan_number TEXT UNIQUE NOT NULL,
-      order_id INTEGER NOT NULL,
+      invoice_id INTEGER,
+      order_id INTEGER,
+      warehouse_id INTEGER,
       load_sheet_id INTEGER,
       delivery_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+      expected_delivery_time TEXT,
+      driver_name TEXT,
+      driver_phone TEXT,
+      driver_cnic TEXT,
+      vehicle_number TEXT,
+      vehicle_type TEXT,
+      shop_id INTEGER,
+      shop_name TEXT,
+      shop_address TEXT,
+      shop_contact TEXT,
+      delivery_address TEXT,
+      route_id INTEGER,
+      route_name TEXT,
+      salesman_id INTEGER,
+      salesman_name TEXT,
       receiver_name TEXT,
       receiver_signature TEXT,
+      status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'in_transit', 'delivered', 'returned', 'cancelled')),
+      total_items INTEGER DEFAULT 0,
+      total_quantity REAL DEFAULT 0,
+      total_amount REAL DEFAULT 0,
+      subtotal REAL DEFAULT 0,
+      discount_percentage REAL DEFAULT 0,
+      discount_amount REAL DEFAULT 0,
+      tax_percentage REAL DEFAULT 0,
+      tax_amount REAL DEFAULT 0,
+      shipping_charges REAL DEFAULT 0,
+      other_charges REAL DEFAULT 0,
+      round_off REAL DEFAULT 0,
+      grand_total REAL DEFAULT 0,
       notes TEXT,
-      status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'delivered', 'returned')),
+      created_by INTEGER,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id),
       FOREIGN KEY (order_id) REFERENCES orders(id),
-      FOREIGN KEY (load_sheet_id) REFERENCES load_sheets(id)
+      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
+      FOREIGN KEY (load_sheet_id) REFERENCES load_sheets(id),
+      FOREIGN KEY (shop_id) REFERENCES shops(id),
+      FOREIGN KEY (route_id) REFERENCES routes(id),
+      FOREIGN KEY (created_by) REFERENCES users(id)
     )
   `);
 
-  // Delivery Items table
+  // Delivery Items table (Professional delivery items with all charges)
   db.exec(`
     CREATE TABLE IF NOT EXISTS delivery_items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       delivery_id INTEGER NOT NULL,
       product_id INTEGER NOT NULL,
-      quantity_ordered INTEGER NOT NULL,
-      quantity_delivered INTEGER NOT NULL,
-      unit_price REAL NOT NULL,
-      total_price REAL NOT NULL,
+      product_name TEXT,
+      product_code TEXT,
+      quantity_ordered INTEGER NOT NULL DEFAULT 0,
+      quantity_delivered INTEGER NOT NULL DEFAULT 0,
+      quantity_returned INTEGER DEFAULT 0,
+      unit_price REAL NOT NULL DEFAULT 0,
+      total_price REAL NOT NULL DEFAULT 0,
+      discount_percentage REAL DEFAULT 0,
+      discount_amount REAL DEFAULT 0,
+      tax_percentage REAL DEFAULT 0,
+      tax_amount REAL DEFAULT 0,
+      net_amount REAL DEFAULT 0,
+      batch_number TEXT,
+      expiry_date DATE,
+      notes TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (delivery_id) REFERENCES deliveries(id) ON DELETE CASCADE,
       FOREIGN KEY (product_id) REFERENCES products(id)
@@ -379,17 +739,42 @@ function initializeDatabase() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS payments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      receipt_number TEXT UNIQUE NOT NULL,
+      receipt_number TEXT UNIQUE,
       shop_id INTEGER NOT NULL,
       invoice_id INTEGER,
       payment_date DATETIME DEFAULT CURRENT_TIMESTAMP,
       amount REAL NOT NULL,
-      payment_method TEXT DEFAULT 'cash' CHECK(payment_method IN ('cash', 'bank', 'cheque', 'online')),
+      payment_method TEXT DEFAULT 'cash' CHECK(payment_method IN ('cash', 'bank', 'bank_transfer', 'cheque', 'online', 'credit')),
       reference_number TEXT,
       notes TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (shop_id) REFERENCES shops(id),
       FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+    )
+  `);
+
+  // Shop Ledger table (for tracking all shop transactions)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS shop_ledger (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      shop_id INTEGER NOT NULL,
+      shop_name TEXT,
+      transaction_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+      transaction_type TEXT CHECK(transaction_type IN ('invoice', 'payment', 'adjustment', 'opening_balance')),
+      reference_type TEXT,
+      reference_id INTEGER,
+      reference_number TEXT,
+      debit_amount REAL DEFAULT 0,
+      credit_amount REAL DEFAULT 0,
+      balance REAL DEFAULT 0,
+      description TEXT,
+      notes TEXT,
+      created_by INTEGER,
+      created_by_name TEXT,
+      is_manual INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE,
+      FOREIGN KEY (created_by) REFERENCES users(id)
     )
   `);
 
@@ -468,6 +853,11 @@ function initializeDatabase() {
   `);
 
   console.log('✅ Database schema initialized successfully');
+
+  // MIGRATION: Add missing columns to existing tables
+  // This handles existing databases that need schema updates
+  migrateDeliveriesTable();
+  migrateWarehousesTable();
 
   // Check if admin user exists, if not create default admin
   const adminExists = db.prepare('SELECT COUNT(*) as count FROM users WHERE role_id = ?').get(1);

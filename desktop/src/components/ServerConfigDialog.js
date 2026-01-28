@@ -31,7 +31,7 @@ import {
 } from '../utils/serverConfig';
 
 const ServerConfigDialog = ({ open, onClose, onConfigured }) => {
-  const [config, setConfig] = useState({ host: '147.93.108.205', port: '5001', protocol: 'http' });
+  const [config, setConfig] = useState({ host: '', port: '', protocol: 'http' });
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [saving, setSaving] = useState(false);

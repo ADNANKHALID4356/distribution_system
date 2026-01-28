@@ -163,6 +163,21 @@ const productService = {
       throw error.response?.data || error;
     }
   },
+
+  /**
+   * Get warehouse stock breakdown for a product
+   * Shows stock levels in each warehouse
+   * @param {number} productId - Product ID
+   * @returns {Promise} Response with warehouse stock breakdown
+   */
+  getProductWarehouseStock: async (productId) => {
+    try {
+      const response = await api.get(`/desktop/products/${productId}/warehouse-stock`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || error;
+    }
+  },
 };
 
 export default productService;

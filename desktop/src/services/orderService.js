@@ -55,7 +55,7 @@ const orderService = {
       // Check specific error types
       if (!error.response) {
         console.error('❌ NETWORK ERROR: Backend might not be running!');
-        console.error('❌ Check if backend is running on http://localhost:5000');
+        console.error('❌ Check server connection in Settings');
       } else if (error.response.status === 401) {
         console.error('❌ AUTHENTICATION ERROR: Token invalid or expired');
         console.error('❌ User needs to login again');

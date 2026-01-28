@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { 
   Warehouse, Package, 
   Plus, Edit, Trash2, Eye, Search, ArrowLeft, MapPin,
-  Phone, Box, PackagePlus, X, RefreshCw
+  Phone, Box, PackagePlus, X, RefreshCw, PackageMinus
 } from 'lucide-react';
 import warehouseService from '../../services/warehouseService';
 
@@ -24,10 +24,15 @@ const WarehouseManagementPage = () => {
   const [showStockModal, setShowStockModal] = useState(false);
   const [showManageProductsModal, setShowManageProductsModal] = useState(false);
   const [showDeleteProductModal, setShowDeleteProductModal] = useState(false);
+  const [showStockUpdateModal, setShowStockUpdateModal] = useState(false);
   const [productToDelete, setProductToDelete] = useState(null);
+  const [productToUpdate, setProductToUpdate] = useState(null);
+  const [newStockQuantity, setNewStockQuantity] = useState('');
   const [deletingProduct, setDeletingProduct] = useState(false);
+  const [updatingStock, setUpdatingStock] = useState(false);
   const [availableProducts, setAvailableProducts] = useState([]);
   const [selectedProducts, setSelectedProducts] = useState([]);
+  const [productQuantities, setProductQuantities] = useState({}); // Track quantities for each selected product
   const [productSearch, setProductSearch] = useState('');
   const [addingProducts, setAddingProducts] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
@@ -142,6 +147,57 @@ const WarehouseManagementPage = () => {
       setTimeout(() => setMessage({ type: '', text: '' }), 5000);
     } finally {
       setDeletingProduct(false);
+    }
+  };
+
+  const handleUpdateStock = (product) => {
+    setProductToUpdate(product);
+    setNewStockQuantity(product.quantity || '0');
+    setShowStockUpdateModal(true);
+  };
+
+  const confirmUpdateStock = async () => {
+    if (!productToUpdate || !selectedWarehouse) return;
+    
+    const quantity = parseFloat(newStockQuantity);
+    if (isNaN(quantity) || quantity < 0) {
+      setMessage({ type: 'error', text: 'Please enter a valid quantity (0 or greater)' });
+      setTimeout(() => setMessage({ type: '', text: '' }), 3000);
+      return;
+    }
+
+    try {
+      setUpdatingStock(true);
+      await warehouseService.updateStockLevel(
+        selectedWarehouse.id,
+        productToUpdate.product_id,
+        quantity
+      );
+      
+      setMessage({ 
+        type: 'success', 
+        text: `Stock updated for ${productToUpdate.product_name}: ${productToUpdate.quantity} → ${quantity}` 
+      });
+      
+      // Refresh stock data
+      await fetchWarehouseStock(selectedWarehouse.id);
+      // Also refresh warehouses to update stock totals
+      await fetchWarehouses();
+      
+      setShowStockUpdateModal(false);
+      setProductToUpdate(null);
+      setNewStockQuantity('');
+      
+      setTimeout(() => setMessage({ type: '', text: '' }), 3000);
+    } catch (error) {
+      console.error('Error updating stock:', error);
+      setMessage({ 
+        type: 'error', 
+        text: error.response?.data?.message || 'Failed to update stock' 
+      });
+      setTimeout(() => setMessage({ type: '', text: '' }), 5000);
+    } finally {
+      setUpdatingStock(false);
     }
   };
 
@@ -343,6 +399,13 @@ const WarehouseManagementPage = () => {
     }
   };
 
+  const handleProductQuantityChange = (productId, quantity) => {
+    setProductQuantities(prev => ({
+      ...prev,
+      [productId]: quantity
+    }));
+  };
+
   const handleAddSelectedProducts = async () => {
     if (selectedProducts.length === 0) {
       setMessage({ type: 'error', text: 'Please select at least one product' });
@@ -354,19 +417,23 @@ const WarehouseManagementPage = () => {
       setAddingProducts(true);
       const products = selectedProducts.map(productId => ({
         product_id: productId,
-        quantity: 0,
-        minimum_stock: 0
+        quantity: parseInt(productQuantities[productId]) || 0,
+        min_stock_level: 0
       }));
 
       const response = await warehouseService.addProductsBulk(selectedWarehouse.id, products);
       
+      // Calculate total quantity added
+      const totalQty = products.reduce((sum, p) => sum + p.quantity, 0);
+      
       setMessage({ 
         type: 'success', 
-        text: `Successfully added ${response.data.success.length} products to warehouse!` 
+        text: `Successfully added ${response.data.success.length} products with ${totalQty} total units to warehouse!` 
       });
       
       setShowManageProductsModal(false);
       setSelectedProducts([]);
+      setProductQuantities({});
       fetchWarehouses();
       setTimeout(() => setMessage({ type: '', text: '' }), 5000);
     } catch (error) {
@@ -1007,19 +1074,19 @@ const WarehouseManagementPage = () => {
                             {parseFloat(item.reserved_quantity || 0).toFixed(2)}
                           </td>
                           <td className={`px-6 py-4 whitespace-nowrap text-right text-sm font-semibold ${
-                            getStockStatusColor(item.available_quantity, item.minimum_stock)
+                            getStockStatusColor(item.available_quantity, item.min_stock_level)
                           }`}>
                             {parseFloat(item.available_quantity || 0).toFixed(2)}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-right text-sm text-gray-500">
-                            {parseFloat(item.minimum_stock || 0).toFixed(2)}
+                            {parseFloat(item.min_stock_level || 0).toFixed(2)}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-center">
                             {item.available_quantity <= 0 ? (
                               <span className="px-2 py-1 text-xs font-medium bg-red-100 text-red-800 rounded">
                                 Out of Stock
                               </span>
-                            ) : item.available_quantity <= item.minimum_stock ? (
+                            ) : item.available_quantity <= item.min_stock_level ? (
                               <span className="px-2 py-1 text-xs font-medium bg-orange-100 text-orange-800 rounded">
                                 Low Stock
                               </span>
@@ -1030,13 +1097,22 @@ const WarehouseManagementPage = () => {
                             )}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-center">
-                            <button
-                              onClick={() => handleDeleteProduct(item)}
-                              className="text-red-600 hover:text-red-800 hover:bg-red-50 p-2 rounded-lg transition-colors"
-                              title="Remove product from warehouse"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
+                            <div className="flex justify-center gap-1">
+                              <button
+                                onClick={() => handleUpdateStock(item)}
+                                className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 p-2 rounded-lg transition-colors"
+                                title="Update stock quantity"
+                              >
+                                <Edit className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteProduct(item)}
+                                className="text-red-600 hover:text-red-800 hover:bg-red-50 p-2 rounded-lg transition-colors"
+                                title="Remove product from warehouse"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -1129,6 +1205,7 @@ const WarehouseManagementPage = () => {
                           setSelectedProducts(availableProducts.map(p => p.id));
                         } else {
                           setSelectedProducts([]);
+                          setProductQuantities({});
                         }
                       }}
                       className="h-4 w-4 text-green-600 border-gray-300 rounded"
@@ -1139,41 +1216,65 @@ const WarehouseManagementPage = () => {
                   </div>
 
                   {availableProducts.map(product => (
-                    <label
+                    <div
                       key={product.id}
-                      className={`flex items-center justify-between p-4 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors ${
-                        selectedProducts.includes(product.id) ? 'border-green-500 bg-green-50' : 'border-gray-200'
+                      className={`p-4 border rounded-lg transition-colors ${
+                        selectedProducts.includes(product.id) ? 'border-green-500 bg-green-50' : 'border-gray-200 hover:bg-gray-50'
                       }`}
                     >
-                      <div className="flex items-center gap-3">
-                        <input
-                          type="checkbox"
-                          checked={selectedProducts.includes(product.id)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedProducts([...selectedProducts, product.id]);
-                            } else {
-                              setSelectedProducts(selectedProducts.filter(id => id !== product.id));
-                            }
-                          }}
-                          className="h-4 w-4 text-green-600 border-gray-300 rounded"
-                        />
-                        <div>
-                          <div className="font-medium text-gray-900">{product.name}</div>
-                          <div className="text-sm text-gray-500">
-                            {product.code} • {product.category || 'No category'}
+                      <div className="flex items-center justify-between">
+                        <label className="flex items-center gap-3 cursor-pointer flex-1">
+                          <input
+                            type="checkbox"
+                            checked={selectedProducts.includes(product.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedProducts([...selectedProducts, product.id]);
+                                setProductQuantities(prev => ({ ...prev, [product.id]: product.stock_quantity || 0 }));
+                              } else {
+                                setSelectedProducts(selectedProducts.filter(id => id !== product.id));
+                                setProductQuantities(prev => {
+                                  const newQty = { ...prev };
+                                  delete newQty[product.id];
+                                  return newQty;
+                                });
+                              }
+                            }}
+                            className="h-4 w-4 text-green-600 border-gray-300 rounded"
+                          />
+                          <div>
+                            <div className="font-medium text-gray-900">{product.name}</div>
+                            <div className="text-sm text-gray-500">
+                              {product.code} • {product.category || 'No category'}
+                            </div>
                           </div>
+                        </label>
+                        <div className="flex items-center gap-4">
+                          <div className="text-right">
+                            <div className="text-sm font-medium text-gray-900">
+                              ₨ {parseFloat(product.unit_price || 0).toFixed(2)}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              Global: {product.stock_quantity || 0} units
+                            </div>
+                          </div>
+                          {selectedProducts.includes(product.id) && (
+                            <div className="flex items-center gap-2">
+                              <label className="text-xs text-gray-500">Qty:</label>
+                              <input
+                                type="number"
+                                min="0"
+                                value={productQuantities[product.id] || ''}
+                                onChange={(e) => handleProductQuantityChange(product.id, e.target.value)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                                placeholder="0"
+                              />
+                            </div>
+                          )}
                         </div>
                       </div>
-                      <div className="text-right">
-                        <div className="text-sm font-medium text-gray-900">
-                          ₨ {parseFloat(product.unit_price).toFixed(2)}
-                        </div>
-                        {product.brand && (
-                          <div className="text-xs text-gray-500">{product.brand}</div>
-                        )}
-                      </div>
-                    </label>
+                    </div>
                   ))}
                 </div>
               ) : (
@@ -1191,9 +1292,14 @@ const WarehouseManagementPage = () => {
               <div className="flex items-center justify-between">
                 <div className="text-sm text-gray-600">
                   {selectedProducts.length > 0 ? (
-                    <span className="font-medium text-green-600">
-                      {selectedProducts.length} product(s) selected
-                    </span>
+                    <div>
+                      <span className="font-medium text-green-600">
+                        {selectedProducts.length} product(s) selected
+                      </span>
+                      <span className="text-gray-500 ml-2">
+                        | Total Qty: {Object.values(productQuantities).reduce((sum, q) => sum + (parseInt(q) || 0), 0)}
+                      </span>
+                    </div>
                   ) : (
                     <span>No products selected</span>
                   )}
@@ -1201,7 +1307,10 @@ const WarehouseManagementPage = () => {
                 <div className="flex gap-3">
                   <button
                     type="button"
-                    onClick={() => setShowManageProductsModal(false)}
+                    onClick={() => {
+                      setShowManageProductsModal(false);
+                      setProductQuantities({});
+                    }}
                     className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-white transition-colors"
                   >
                     Cancel
@@ -1346,6 +1455,160 @@ const WarehouseManagementPage = () => {
                   <>
                     <Trash2 className="h-4 w-4" />
                     Remove Product
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Stock Update Modal */}
+      {showStockUpdateModal && productToUpdate && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full shadow-xl">
+            <div className="p-6 border-b bg-gradient-to-r from-blue-600 to-blue-700">
+              <div className="flex items-center gap-3 text-white">
+                <div className="p-2 bg-white/20 rounded-lg">
+                  <Edit className="h-6 w-6" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold">Update Stock Quantity</h2>
+                  <p className="text-sm text-blue-100 mt-1">Adjust warehouse inventory level</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6">
+              {/* Product Info */}
+              <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="font-semibold text-gray-900">{productToUpdate.product_name}</p>
+                    <p className="text-sm text-gray-500 mt-1">Code: {productToUpdate.product_code}</p>
+                    <p className="text-sm text-gray-500">Category: {productToUpdate.category || 'N/A'}</p>
+                  </div>
+                  <Package className="h-8 w-8 text-gray-400" />
+                </div>
+              </div>
+
+              {/* Current Stock Info */}
+              <div className="grid grid-cols-3 gap-3 mb-6">
+                <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
+                  <p className="text-xs text-gray-600">Current</p>
+                  <p className="text-lg font-bold text-blue-900">{parseFloat(productToUpdate.quantity || 0).toFixed(0)}</p>
+                </div>
+                <div className="bg-orange-50 rounded-lg p-3 border border-orange-200">
+                  <p className="text-xs text-gray-600">Reserved</p>
+                  <p className="text-lg font-bold text-orange-900">{parseFloat(productToUpdate.reserved_quantity || 0).toFixed(0)}</p>
+                </div>
+                <div className="bg-green-50 rounded-lg p-3 border border-green-200">
+                  <p className="text-xs text-gray-600">Available</p>
+                  <p className="text-lg font-bold text-green-900">{parseFloat(productToUpdate.available_quantity || 0).toFixed(0)}</p>
+                </div>
+              </div>
+
+              {/* New Quantity Input */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  New Stock Quantity
+                </label>
+                <div className="flex gap-3">
+                  <div className="relative flex-1">
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={newStockQuantity}
+                      onChange={(e) => setNewStockQuantity(e.target.value)}
+                      className="w-full px-4 py-3 text-lg border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Enter new quantity"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">units</span>
+                  </div>
+                </div>
+                <div className="flex gap-2 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => setNewStockQuantity(String(Math.max(0, parseInt(newStockQuantity || 0) - 10)))}
+                    className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200"
+                  >
+                    -10
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewStockQuantity(String(Math.max(0, parseInt(newStockQuantity || 0) - 1)))}
+                    className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200"
+                  >
+                    -1
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewStockQuantity(String(parseInt(newStockQuantity || 0) + 1))}
+                    className="px-3 py-1 text-sm bg-green-100 text-green-700 rounded hover:bg-green-200"
+                  >
+                    +1
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewStockQuantity(String(parseInt(newStockQuantity || 0) + 10))}
+                    className="px-3 py-1 text-sm bg-green-100 text-green-700 rounded hover:bg-green-200"
+                  >
+                    +10
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewStockQuantity(String(parseInt(newStockQuantity || 0) + 100))}
+                    className="px-3 py-1 text-sm bg-green-100 text-green-700 rounded hover:bg-green-200"
+                  >
+                    +100
+                  </button>
+                </div>
+              </div>
+
+              {/* Change Preview */}
+              {newStockQuantity !== '' && parseFloat(newStockQuantity) !== parseFloat(productToUpdate.quantity || 0) && (
+                <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-sm text-blue-700">
+                    Stock will change from <strong>{parseFloat(productToUpdate.quantity || 0).toFixed(0)}</strong> to{' '}
+                    <strong>{parseFloat(newStockQuantity).toFixed(0)}</strong> 
+                    <span className={parseFloat(newStockQuantity) > parseFloat(productToUpdate.quantity || 0) ? 'text-green-600' : 'text-red-600'}>
+                      {' '}({parseFloat(newStockQuantity) > parseFloat(productToUpdate.quantity || 0) ? '+' : ''}
+                      {(parseFloat(newStockQuantity) - parseFloat(productToUpdate.quantity || 0)).toFixed(0)})
+                    </span>
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="p-6 border-t bg-gray-50 flex gap-3 justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowStockUpdateModal(false);
+                  setProductToUpdate(null);
+                  setNewStockQuantity('');
+                }}
+                className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-white transition-colors"
+                disabled={updatingStock}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmUpdateStock}
+                disabled={updatingStock || newStockQuantity === '' || parseFloat(newStockQuantity) < 0}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {updatingStock ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    Updating...
+                  </>
+                ) : (
+                  <>
+                    <Edit className="h-4 w-4" />
+                    Update Stock
                   </>
                 )}
               </button>

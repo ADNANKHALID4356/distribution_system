@@ -64,9 +64,12 @@ const DashboardScreen = () => {
       if (userIsSalesman) {
         try {
           const salesmanId = user.salesman_id || user.id;
+          console.log('🔍 [DASHBOARD] Loading order stats for salesman:', salesmanId);
           const orderStats = await dbHelper.getOrderStats(salesmanId);
-          setOrderCount(orderStats.total || 0);
+          console.log(`✅ [DASHBOARD] Order stats:`, orderStats);
+          setOrderCount(orderStats.total_orders || 0);
         } catch (error) {
+          console.error('❌ [DASHBOARD] Error loading order stats:', error.message);
           setOrderCount(0);
         }
       } else {
@@ -98,9 +101,18 @@ const DashboardScreen = () => {
         try {
           // Only get unsynced orders for current salesman (multi-tenancy)
           const salesmanId = user.salesman_id || user.id;
-          const unsyncedOrders = await dbHelper.getUnsyncedOrders(salesmanId);
-          setUnsyncedOrderCount(unsyncedOrders.length);
+          console.log('🔍 [DASHBOARD] Loading unsynced orders for salesman:', salesmanId);
+          
+          if (!salesmanId) {
+            console.error('❌ [DASHBOARD] Cannot load unsynced orders - salesmanId is null');
+            setUnsyncedOrderCount(0);
+          } else {
+            const unsyncedOrders = await dbHelper.getUnsyncedOrders(salesmanId);
+            console.log(`✅ [DASHBOARD] Found ${unsyncedOrders.length} unsynced orders`);
+            setUnsyncedOrderCount(unsyncedOrders.length);
+          }
         } catch (error) {
+          console.error('❌ [DASHBOARD] Error loading unsynced orders:', error.message);
           setUnsyncedOrderCount(0);
         }
       }
@@ -170,6 +182,12 @@ const DashboardScreen = () => {
             try {
               // Pass salesman_id for multi-tenancy filtering
               const salesmanId = user.salesman_id || user.id;
+              
+              if (!salesmanId) {
+                Alert.alert('Error', 'User ID not found. Please log out and log in again.');
+                return;
+              }
+              
               const result = await orderService.syncOrdersToBackend(salesmanId);
               
               if (result.success) {
@@ -191,11 +209,13 @@ const DashboardScreen = () => {
                 );
               }
             } catch (error) {
+              console.error('❌ [DASHBOARD] Order sync error:', error.message);
+              console.error('❌ [DASHBOARD] Error stack:', error.stack);
               // ✅ Sprint 9 enhancement: Error haptic feedback
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
               Alert.alert(
                 'Error',
-                'Failed to sync orders. Please check your connection and try again.',
+                `Failed to sync orders: ${error.message}. Please check your connection and try again.`,
                 [{ text: 'OK' }]
               );
             } finally {

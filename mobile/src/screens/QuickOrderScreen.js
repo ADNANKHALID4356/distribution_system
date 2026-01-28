@@ -40,8 +40,26 @@ const QuickOrderScreen = ({ navigation }) => {
     try {
       setLoading(true);
       
+      // Get current user's route_id for filtering (salesman isolation)
+      const userStr = await AsyncStorage.getItem('user');
+      let userRouteId = null;
+      if (userStr) {
+        const user = JSON.parse(userStr);
+        // If user is salesman (role_id = 3), filter by their route
+        if (user.role_id === 3) {
+          const salesmanStr = await AsyncStorage.getItem('salesman');
+          if (salesmanStr) {
+            const salesman = JSON.parse(salesmanStr);
+            userRouteId = salesman.route_id;
+            console.log(`🔒 [ISOLATION] Filtering shops for salesman's route: ${userRouteId}`);
+          }
+        }
+      }
+      
       // Load shops using hybrid service (server first, then cache)
-      const shopsData = await shopService.getShops();
+      // Apply route filter for salesman isolation
+      const filters = userRouteId ? { routeId: userRouteId } : {};
+      const shopsData = await shopService.getShops(filters);
       
       // Filter active shops only
       const activeShops = shopsData.filter(shop => shop.is_active === 1);

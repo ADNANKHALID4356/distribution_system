@@ -31,8 +31,14 @@ exports.syncOrders = async (req, res) => {
   try {
     const { salesman_id, device_info, orders } = req.body;
     
+    console.log('\n🔄 ========== SYNC ORDERS REQUEST ==========');
+    console.log('👤 Salesman ID:', salesman_id);
+    console.log('📱 Device Info:', device_info);
+    console.log('📦 Orders to sync:', orders?.length || 0);
+    
     // Validation
     if (!salesman_id || !orders || !Array.isArray(orders)) {
+      console.log('❌ Validation failed: Missing salesman_id or orders');
       return res.status(400).json({
         success: false,
         message: 'Invalid request. salesman_id and orders array required.'
@@ -41,12 +47,14 @@ exports.syncOrders = async (req, res) => {
     
     // Limit batch size
     if (orders.length > 50) {
+      console.log('❌ Too many orders:', orders.length);
       return res.status(400).json({
         success: false,
         message: 'Batch size exceeds limit. Maximum 50 orders per request.'
       });
     }
     
+    console.log('✅ Starting transaction...');
     await connection.beginTransaction();
     
     const results = {
@@ -54,38 +62,69 @@ exports.syncOrders = async (req, res) => {
       success: 0,
       failed: 0,
       conflicts: 0,
-      errors: []
+      errors: [],
+      synced_orders: []  // Track synced order details for mobile
     };
     
     const startTime = Date.now();
     
-    for (const orderData of orders) {
+    console.log('🔍 Processing', orders.length, 'orders...\n');
+    
+    for (let i = 0; i < orders.length; i++) {
+      const orderData = orders[i];
+      console.log(`\n📦 Order ${i + 1}/${orders.length}:`, orderData.mobile_order_id || 'No mobile_order_id');
+      
       try {
-        const { mobile_order_id, shop_id, route_id, order_date, total_amount, discount, net_amount, notes, items } = orderData;
+        const { mobile_order_id, shop_id, route_id, total_amount, discount, net_amount, notes, items } = orderData;
+        
+        // Convert ISO datetime to MySQL format (YYYY-MM-DD HH:MM:SS)
+        let order_date = orderData.order_date;
+        if (order_date && order_date.includes('T')) {
+          order_date = new Date(order_date).toISOString().slice(0, 19).replace('T', ' ');
+          console.log('   📅 Converted order_date:', order_date);
+        }
+        
+        console.log('   Shop:', shop_id, '| Items:', items?.length || 0, '| Amount:', net_amount);
         
         // Check if order already exists (by mobile_order_id)
-        const [existing] = await connection.query(
-          'SELECT id, updated_at, is_synced FROM orders WHERE mobile_order_id = ? AND salesman_id = ?',
-          [mobile_order_id, salesman_id]
-        );
+        console.log('   🔍 Checking for existing order...');
+        
+        // SQLite doesn't have mobile_order_id column, so check by order details instead
+        const useSQLite = process.env.USE_SQLITE === 'true';
+        let existing;
+        
+        if (useSQLite) {
+          // For SQLite: Check by shop_id, order_date, and total_amount (no mobile_order_id column)
+          [existing] = await connection.query(
+            'SELECT id, order_number, updated_at FROM orders WHERE salesman_id = ? AND shop_id = ? AND order_date = ? AND net_amount = ?',
+            [salesman_id, shop_id, order_date, net_amount]
+          );
+        } else {
+          // For MySQL: Use mobile_order_id
+          [existing] = await connection.query(
+            'SELECT id, updated_at, is_synced FROM orders WHERE mobile_order_id = ? AND salesman_id = ?',
+            [mobile_order_id, salesman_id]
+          );
+        }
+        
+        console.log('   Existing orders found:', existing?.length || 0);
         
         let orderId;
         
         if (existing.length > 0) {
+          console.log('   ⚠️  Order already exists - checking for conflicts...');
           // Conflict resolution: Check timestamps
           const existingOrder = existing[0];
           const serverTimestamp = new Date(existingOrder.updated_at).getTime();
           const mobileTimestamp = new Date(order_date).getTime();
           
-          if (mobileTimestamp <= serverTimestamp && existingOrder.is_synced) {
-            // Server data is newer - log conflict
-            await connection.query(
-              `INSERT INTO sync_conflicts 
-               (salesman_id, entity_type, entity_id, mobile_data, server_data, conflict_type, resolution_strategy) 
-               VALUES (?, 'order', ?, ?, ?, 'timestamp', 'server_wins')`,
-              [salesman_id, mobile_order_id, JSON.stringify(orderData), JSON.stringify(existingOrder), 'timestamp']
-            );
-            
+          // For SQLite: Skip conflict check since we don't have is_synced column
+          // For MySQL: Check if server data is newer and already synced
+          const isSynced = useSQLite ? false : existingOrder.is_synced;
+          
+          if (mobileTimestamp <= serverTimestamp && isSynced) {
+            // Server data is newer - skip this order
+            console.log('   ⚠️  Skipping: Server data is newer');
             results.conflicts++;
             results.errors.push({
               mobile_order_id,
@@ -95,18 +134,33 @@ exports.syncOrders = async (req, res) => {
           }
           
           // Update existing order
-          await connection.query(
-            `UPDATE orders 
-             SET shop_id = ?, route_id = ?, order_date = ?, total_amount = ?, discount = ?, net_amount = ?, 
-                 notes = ?, is_synced = TRUE, sync_status = 'synced', synced_at = NOW(), last_modified = NOW()
-             WHERE id = ?`,
-            [shop_id, route_id, order_date, total_amount, discount, net_amount, notes, existingOrder.id]
-          );
+          const useSQLite = process.env.USE_SQLITE === 'true' && process.env.NODE_ENV === 'development';
+          const orderDetailsTable = useSQLite ? 'order_items' : 'order_details';
+          
+          if (useSQLite) {
+            // SQLite: no route_id, is_synced, sync_status, synced_at, last_modified
+            // Uses discount_amount instead of discount
+            await connection.query(
+              `UPDATE orders 
+               SET shop_id = ?, order_date = ?, total_amount = ?, discount_amount = ?, net_amount = ?, notes = ?
+               WHERE id = ?`,
+              [shop_id, order_date, total_amount, discount, net_amount, notes, existingOrder.id]
+            );
+          } else {
+            // MySQL: has all sync-related columns
+            await connection.query(
+              `UPDATE orders 
+               SET shop_id = ?, route_id = ?, order_date = ?, total_amount = ?, discount = ?, net_amount = ?, 
+                   notes = ?, is_synced = TRUE, sync_status = 'synced', synced_at = NOW(), last_modified = NOW()
+               WHERE id = ?`,
+              [shop_id, route_id, order_date, total_amount, discount, net_amount, notes, existingOrder.id]
+            );
+          }
           
           orderId = existingOrder.id;
           
           // Delete existing items
-          await connection.query('DELETE FROM order_details WHERE order_id = ?', [orderId]);
+          await connection.query(`DELETE FROM ${orderDetailsTable} WHERE order_id = ?`, [orderId]);
         } else {
           // CRITICAL: Validate stock availability BEFORE creating order
           if (items && items.length > 0) {
@@ -121,7 +175,11 @@ exports.syncOrders = async (req, res) => {
               }
               
               const product = stockCheck[0];
-              const availableStock = product.stock_quantity - parseFloat(product.reserved_stock);
+              // Handle null reserved_stock (common in SQLite)
+              const reservedStock = parseFloat(product.reserved_stock) || 0;
+              const availableStock = product.stock_quantity - reservedStock;
+              
+              console.log(`   📦 Stock check for ${product.product_name}: stock=${product.stock_quantity}, reserved=${reservedStock}, available=${availableStock}, needed=${item.quantity}`);
               
               if (availableStock < item.quantity) {
                 throw new Error(
@@ -133,34 +191,92 @@ exports.syncOrders = async (req, res) => {
           }
           
           // Generate order number
+          console.log('   🎯 Generating new order number...');
           const orderNumber = await generateOrderNumber(connection);
+          console.log('   ✅ Order number:', orderNumber);
           
-          // Insert new order
-          const [result] = await connection.query(
-            `INSERT INTO orders 
-             (order_number, salesman_id, shop_id, route_id, order_date, total_amount, discount, net_amount, 
-              status, notes, mobile_order_id, is_synced, sync_status, synced_at) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'placed', ?, ?, TRUE, 'synced', NOW())`,
-            [orderNumber, salesman_id, shop_id, route_id, order_date, total_amount, discount, net_amount, notes, mobile_order_id]
-          );
+          // Check if using SQLite (different schema from MySQL)
+          const useSQLite = process.env.USE_SQLITE === 'true' && process.env.NODE_ENV === 'development';
+          console.log('   📊 Database:', useSQLite ? 'SQLite' : 'MySQL');
           
-          orderId = result.insertId;
+          let insertResult;
+          if (useSQLite) {
+            console.log('   💾 Inserting order (SQLite schema)...');
+            // SQLite: no route_id, mobile_order_id, is_synced, sync_status, synced_at
+            // Uses discount_amount instead of discount
+            [insertResult] = await connection.query(
+              `INSERT INTO orders 
+               (order_number, salesman_id, shop_id, order_date, total_amount, discount_amount, net_amount, status, notes) 
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'placed', ?)`,
+              [orderNumber, salesman_id, shop_id, order_date, total_amount, discount, net_amount, notes]
+            );
+          } else {
+            // MySQL: has route_id, mobile_order_id, is_synced, sync_status, synced_at
+            [insertResult] = await connection.query(
+              `INSERT INTO orders 
+               (order_number, salesman_id, shop_id, route_id, order_date, total_amount, discount, net_amount, 
+                status, notes, mobile_order_id, is_synced, sync_status, synced_at) 
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'placed', ?, ?, TRUE, 'synced', NOW())`,
+              [orderNumber, salesman_id, shop_id, route_id, order_date, total_amount, discount, net_amount, notes, mobile_order_id]
+            );
+          }
+          
+          orderId = insertResult.insertId;
         }
         
         // Insert order items
         if (items && items.length > 0) {
+          const useSQLite = process.env.USE_SQLITE === 'true' && process.env.NODE_ENV === 'development';
+          const orderDetailsTable = useSQLite ? 'order_items' : 'order_details';
+          
           for (const item of items) {
-            await connection.query(
-              `INSERT INTO order_details 
-               (order_id, product_id, quantity, unit_price, total_price, discount, net_price) 
-               VALUES (?, ?, ?, ?, ?, ?, ?)`,
-              [orderId, item.product_id, item.quantity, item.unit_price, item.total_price, item.discount || 0, item.net_price]
-            );
+            if (useSQLite) {
+              // SQLite: uses discount_percentage, no net_price
+              const discount_percentage = item.discount && item.total_price > 0 
+                ? (item.discount / item.total_price) * 100 
+                : 0;
+              
+              await connection.query(
+                `INSERT INTO ${orderDetailsTable} 
+                 (order_id, product_id, quantity, unit_price, total_price, discount_percentage) 
+                 VALUES (?, ?, ?, ?, ?, ?)`,
+                [orderId, item.product_id, item.quantity, item.unit_price, item.total_price, discount_percentage]
+              );
+            } else {
+              // MySQL: has discount and net_price
+              await connection.query(
+                `INSERT INTO ${orderDetailsTable} 
+                 (order_id, product_id, quantity, unit_price, total_price, discount, net_price) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                [orderId, item.product_id, item.quantity, item.unit_price, item.total_price, item.discount || 0, item.net_price]
+              );
+            }
           }
           
-          // CRITICAL: Reserve stock for this order
+          // ================================================================
+          // CRITICAL: DEDUCT STOCK IMMEDIATELY FOR REAL-TIME INVENTORY TRACKING
+          // This ensures stock counts are updated as soon as orders are synced
+          // ================================================================
+          console.log('   📦 DEDUCTING STOCK FOR SYNCED ORDER...');
+          
+          const useSQLiteForStock = process.env.USE_SQLITE === 'true';
+          
+          // Get default warehouse for stock deduction
+          let warehouseId = null;
+          try {
+            const [defaultWarehouse] = await connection.query(
+              `SELECT id FROM warehouses WHERE status = 'active' ORDER BY is_default DESC LIMIT 1`
+            );
+            if (defaultWarehouse && defaultWarehouse.length > 0) {
+              warehouseId = defaultWarehouse[0].id;
+              console.log('   🏪 Using warehouse ID:', warehouseId);
+            }
+          } catch (whErr) {
+            console.warn('   ⚠️ Could not get default warehouse:', whErr.message);
+          }
+          
           for (const item of items) {
-            // Get current stock
+            // Get current stock info
             const [stockInfo] = await connection.query(
               'SELECT stock_quantity, reserved_stock, product_name FROM products WHERE id = ?',
               [item.product_id]
@@ -168,47 +284,103 @@ exports.syncOrders = async (req, res) => {
             
             if (stockInfo.length > 0) {
               const product = stockInfo[0];
-              const availableBefore = product.stock_quantity - parseFloat(product.reserved_stock);
+              const stockBefore = parseFloat(product.stock_quantity) || 0;
+              const stockAfter = stockBefore - item.quantity;
               
-              // Reserve the stock
+              // ================================================================
+              // 1. DEDUCT FROM GLOBAL PRODUCT STOCK (products.stock_quantity)
+              // ================================================================
+              console.log(`   📦 [GLOBAL] ${product.product_name}: ${stockBefore} → ${stockAfter} (-${item.quantity})`);
               await connection.query(
-                'UPDATE products SET reserved_stock = reserved_stock + ? WHERE id = ?',
+                'UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?',
                 [item.quantity, item.product_id]
               );
               
-              // Log stock movement
-              await connection.query(
-                `INSERT INTO stock_movements (
-                  product_id, movement_type, quantity,
-                  stock_before, stock_after, reserved_before, reserved_after,
-                  available_before, available_after, reference_type, reference_id,
-                  reference_number, notes, created_by
-                ) VALUES (?, 'RESERVE', ?, ?, ?, ?, ?, ?, ?, 'order', ?, ?, ?, NULL)`,
-                [
-                  item.product_id,
-                  item.quantity,
-                  product.stock_quantity,
-                  product.stock_quantity,
-                  parseFloat(product.reserved_stock),
-                  parseFloat(product.reserved_stock) + item.quantity,
-                  availableBefore,
-                  availableBefore - item.quantity,
-                  orderId,
-                  mobile_order_id || `Order ${orderId}`,
-                  `Reserved for order ${mobile_order_id || orderId} (synced from mobile)`
-                ]
-              );
+              // ================================================================
+              // 2. DEDUCT FROM WAREHOUSE STOCK (warehouse_stock.quantity)
+              // ================================================================
+              if (warehouseId) {
+                const [warehouseStock] = await connection.query(
+                  'SELECT id, quantity FROM warehouse_stock WHERE warehouse_id = ? AND product_id = ?',
+                  [warehouseId, item.product_id]
+                );
+                
+                if (warehouseStock && warehouseStock.length > 0) {
+                  const wsQty = parseFloat(warehouseStock[0].quantity) || 0;
+                  const wsQtyAfter = Math.max(0, wsQty - item.quantity);
+                  
+                  console.log(`   🏪 [WAREHOUSE] ${product.product_name}: ${wsQty} → ${wsQtyAfter} (-${item.quantity})`);
+                  
+                  await connection.query(
+                    `UPDATE warehouse_stock 
+                     SET quantity = quantity - ?, 
+                         last_updated = ${useSQLiteForStock ? "datetime('now')" : 'NOW()'}
+                     WHERE warehouse_id = ? AND product_id = ?`,
+                    [item.quantity, warehouseId, item.product_id]
+                  );
+                } else {
+                  console.log(`   ⚠️ [WAREHOUSE] Product ${item.product_id} not in warehouse ${warehouseId}`);
+                }
+              }
+              
+              // Log stock movement - ONLY for MySQL (SQLite doesn't have stock_movements table)
+              if (!useSQLiteForStock) {
+                const reservedStock = parseFloat(product.reserved_stock) || 0;
+                await connection.query(
+                  `INSERT INTO stock_movements (
+                    product_id, movement_type, quantity,
+                    stock_before, stock_after, reserved_before, reserved_after,
+                    available_before, available_after, reference_type, reference_id,
+                    reference_number, notes, created_by
+                  ) VALUES (?, 'SALE', ?, ?, ?, ?, ?, ?, ?, 'order', ?, ?, ?, NULL)`,
+                  [
+                    item.product_id,
+                    item.quantity,
+                    stockBefore,
+                    stockAfter,
+                    reservedStock,
+                    reservedStock,
+                    stockBefore - reservedStock,
+                    stockAfter - reservedStock,
+                    orderId,
+                    mobile_order_id || `Order ${orderId}`,
+                    `Stock deducted for synced order ${mobile_order_id || orderId}`
+                  ]
+                );
+              }
             }
           }
           
-          // Mark order as having stock reserved
-          await connection.query(
-            'UPDATE orders SET stock_reserved = TRUE WHERE id = ?',
-            [orderId]
-          );
+          console.log('   ✅ Stock deducted successfully for all items');
+          
+          // Update order with warehouse_id if we have one
+          if (warehouseId) {
+            await connection.query(
+              'UPDATE orders SET warehouse_id = ? WHERE id = ?',
+              [warehouseId, orderId]
+            );
+          }
+          
+          // Mark order as having stock deducted - ONLY for MySQL (SQLite schema doesn't have this column)
+          const useSQLiteForReserved = process.env.USE_SQLITE === 'true';
+          if (!useSQLiteForReserved) {
+            await connection.query(
+              'UPDATE orders SET stock_reserved = TRUE WHERE id = ?',
+              [orderId]
+            );
+          } else {
+            console.log('   ℹ️  SQLite mode - skipping stock_reserved flag update');
+          }
         }
         
         results.success++;
+        // Track synced order for mobile response
+        results.synced_orders.push({
+          mobile_order_id: orderData.mobile_order_id,
+          backend_id: orderId,
+          order_number: orderData.order_number || `ORD-${orderId}`,
+          status: 'synced'
+        });
       } catch (itemError) {
         results.failed++;
         results.errors.push({
@@ -222,16 +394,21 @@ exports.syncOrders = async (req, res) => {
     
     const duration = Date.now() - startTime;
     
-    // Log sync event
-    await connection.query(
-      `INSERT INTO sync_logs 
-       (salesman_id, entity_type, action, status, records_count, sync_duration, device_info, timestamp) 
-       VALUES (?, 'order', 'upload', ?, ?, ?, ?, NOW())`,
-      [salesman_id, results.failed === 0 ? 'success' : 'partial', results.success, duration, JSON.stringify(device_info)]
-    );
-    
-    // Update sync statistics
-    await updateSyncStatistics(connection, salesman_id, 'orders_uploaded', results.success);
+    // Log sync event (after commit - not in transaction)
+    try {
+      await connection.query(
+        `INSERT INTO sync_logs 
+         (salesman_id, entity_type, action, status, records_count, sync_duration, device_info, timestamp) 
+         VALUES (?, 'order', 'upload', ?, ?, ?, ?, NOW())`,
+        [salesman_id, results.failed === 0 ? 'success' : 'partial', results.success, duration, JSON.stringify(device_info)]
+      );
+      
+      // Update sync statistics
+      await updateSyncStatistics(connection, salesman_id, 'orders_uploaded', results.success);
+    } catch (logError) {
+      console.warn('Failed to log sync event:', logError.message);
+      // Don't fail the response if logging fails
+    }
     
     res.json({
       success: true,
@@ -241,16 +418,26 @@ exports.syncOrders = async (req, res) => {
     });
     
   } catch (error) {
-    await connection.rollback();
+    // Only rollback if we're still in a transaction
+    try {
+      await connection.rollback();
+    } catch (rollbackError) {
+      console.warn('Rollback warning (transaction may have already been committed):', rollbackError.message);
+    }
+    
     console.error('Sync orders error:', error);
     
-    // Log failure
-    await connection.query(
-      `INSERT INTO sync_logs 
-       (salesman_id, entity_type, action, status, error_message, timestamp) 
-       VALUES (?, 'order', 'upload', 'failed', ?, NOW())`,
-      [req.body.salesman_id || null, error.message]
-    );
+    // Log failure (not in transaction)
+    try {
+      await connection.query(
+        `INSERT INTO sync_logs 
+         (salesman_id, entity_type, action, status, error_message, timestamp) 
+         VALUES (?, 'order', 'upload', 'failed', ?, NOW())`,
+        [req.body.salesman_id || null, error.message]
+      );
+    } catch (logError) {
+      console.warn('Failed to log sync error:', logError.message);
+    }
     
     res.status(500).json({
       success: false,
@@ -512,8 +699,8 @@ exports.getSyncStatistics = async (req, res) => {
     const [stats] = await db.query(
       `SELECT * FROM sync_statistics 
        WHERE salesman_id = ? 
-       AND sync_date >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
-       ORDER BY sync_date DESC`,
+       AND date >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+       ORDER BY date DESC`,
       [salesman_id, days]
     );
     
@@ -570,13 +757,26 @@ async function generateOrderNumber(connection) {
 async function updateSyncStatistics(connection, salesman_id, field, increment) {
   const conn = connection || db;
   
-  await conn.query(
-    `INSERT INTO sync_statistics (salesman_id, sync_date, ${field}, total_syncs, last_sync_at)
-     VALUES (?, CURDATE(), ?, 1, NOW())
-     ON DUPLICATE KEY UPDATE 
-       ${field} = ${field} + ?,
-       total_syncs = total_syncs + 1,
-       last_sync_at = NOW()`,
-    [salesman_id, increment, increment]
-  );
+  // Map field names to actual column names in sync_statistics table
+  const columnMap = {
+    'orders_uploaded': 'total_orders',
+    'products_synced': 'successful_syncs',
+    'shops_synced': 'successful_syncs',
+    'routes_synced': 'successful_syncs'
+  };
+  const actualColumn = columnMap[field] || 'total_orders';
+  
+  try {
+    await conn.query(
+      `INSERT INTO sync_statistics (salesman_id, date, ${actualColumn}, total_syncs, successful_syncs)
+       VALUES (?, CURDATE(), ?, 1, ?)
+       ON DUPLICATE KEY UPDATE 
+         ${actualColumn} = ${actualColumn} + ?,
+         total_syncs = total_syncs + 1,
+         successful_syncs = successful_syncs + ?`,
+      [salesman_id, increment, increment, increment, increment]
+    );
+  } catch (err) {
+    console.warn('Failed to update sync statistics:', err.message);
+  }
 }

@@ -1,17 +1,17 @@
 // ============================================
 // CENTRAL API CONFIGURATION
 // ============================================
-// SINGLE SOURCE OF TRUTH for all backend API URLs
-// Update this ONE variable to change backend server for entire app
+// This file is kept for backward compatibility
+// The actual server configuration is managed by serverConfig.js
+// Users can change server settings through the Server Settings dialog
+//
+// To change the DEFAULT server (for new installations):
+// Edit desktop/src/utils/serverConfig.js -> DEFAULT_CONFIG
 
-// Local Development Backend - For Testing New Features
-export const BACKEND_URL = 'http://localhost:5000/api';
+import { getServerUrl } from '../utils/serverConfig';
 
-// Alternative configurations (uncomment to use):
-// export const BACKEND_URL = 'http://147.93.108.205:5001/api';  // VPS Production Backend
-// export const BACKEND_URL = 'https://api.yourdomain.com/api';  // Production with domain
-
-// Export as default API_BASE_URL for backward compatibility
+// Dynamic URL from serverConfig (single source of truth)
+export const BACKEND_URL = getServerUrl();
 export const API_BASE_URL = BACKEND_URL;
 
 // Environment detection
@@ -20,7 +20,8 @@ const environment = process.env.NODE_ENV || 'development';
 const config = {
   API_BASE_URL: BACKEND_URL,
   BACKEND_URL,
-  environment
+  environment,
+  getServerUrl
 };
 
 export default config;

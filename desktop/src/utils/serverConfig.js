@@ -2,6 +2,8 @@
 // Stores and retrieves central server IP address
 
 const SERVER_CONFIG_KEY = 'serverConfig';
+const CONFIG_VERSION_KEY = 'serverConfigVersion';
+const CURRENT_CONFIG_VERSION = 2; // Increment this to force reset old configs
 
 // Default configuration
 // IMPORTANT: Update this before building for production distribution
@@ -19,6 +21,24 @@ const DEFAULT_CONFIG = {
 //   port: '443',                  // 443 for HTTPS, 80 for HTTP
 //   protocol: 'https'             // Use HTTPS in production
 // };
+
+// Check and migrate config version (resets old configs to new defaults)
+const checkConfigVersion = () => {
+  try {
+    const storedVersion = localStorage.getItem(CONFIG_VERSION_KEY);
+    if (!storedVersion || parseInt(storedVersion) < CURRENT_CONFIG_VERSION) {
+      // Old or no version - reset to new defaults
+      localStorage.removeItem(SERVER_CONFIG_KEY);
+      localStorage.setItem(CONFIG_VERSION_KEY, CURRENT_CONFIG_VERSION.toString());
+      console.log('🔄 Server config reset to new defaults (version upgrade)');
+    }
+  } catch (error) {
+    console.error('Error checking config version:', error);
+  }
+};
+
+// Run version check on module load
+checkConfigVersion();
 
 export const getServerConfig = () => {
   try {

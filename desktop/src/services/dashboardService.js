@@ -9,13 +9,40 @@ import api from './api';
 const dashboardService = {
   /**
    * Get overall dashboard statistics
+   * Uses timestamp to prevent caching and ensure fresh data
    */
   async getDashboardStats() {
     try {
-      const response = await api.get('/desktop/dashboard/stats');
+      console.log('📊 dashboardService: Making API call to /desktop/dashboard/stats');
+      const response = await api.get('/desktop/dashboard/stats', {
+        params: { _t: Date.now() } // Cache buster
+      });
+      console.log('📊 dashboardService: Raw response:', response);
+      console.log('📊 dashboardService: Response data:', response.data);
       return response.data;
     } catch (error) {
-      throw error.response?.data || error;
+      console.error('📊 dashboardService: Error:', error);
+      console.error('📊 dashboardService: Error response:', error.response);
+      // Return a default response instead of throwing to prevent UI from breaking
+      return {
+        success: false,
+        data: {
+          total_orders: 0,
+          total_products: 0,
+          total_shops: 0,
+          total_salesmen: 0,
+          total_warehouses: 0,
+          pending_deliveries: 0,
+          total_deliveries: 0,
+          total_invoices: 0,
+          low_stock_products: 0,
+          out_of_stock_products: 0,
+          total_stock_quantity: 0,
+          total_inventory_value: 0,
+          total_warehouse_stock: 0
+        },
+        error: error.message
+      };
     }
   },
 

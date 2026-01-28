@@ -333,6 +333,45 @@ const ledgerService = {
       console.error('Error fetching dashboard data:', error);
       throw error;
     }
+  },
+
+  // ============================================================================
+  // LEDGER MANAGEMENT OPERATIONS (Admin)
+  // ============================================================================
+
+  /**
+   * Recalculate all ledger balances for a shop
+   * Fixes any balance inconsistencies caused by failed entries
+   * @param {number} shopId - Shop ID
+   * @returns {Promise}
+   */
+  async recalculateBalances(shopId) {
+    try {
+      const response = await api.post(`/desktop/ledger/shop/${shopId}/recalculate`);
+      return response.data;
+    } catch (error) {
+      console.error('Error recalculating balances:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Clear transaction history for a shop (Admin only)
+   * Only deletes ledger entries, NOT invoices or payments
+   * @param {number} shopId - Shop ID
+   * @param {boolean} retainOpeningBalance - If true, creates opening balance entry with current balance
+   * @returns {Promise}
+   */
+  async clearTransactionHistory(shopId, retainOpeningBalance = false) {
+    try {
+      const response = await api.delete(`/desktop/ledger/shop/${shopId}/history`, {
+        data: { retain_opening_balance: retainOpeningBalance }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error clearing transaction history:', error);
+      throw error;
+    }
   }
 };
 

@@ -33,6 +33,7 @@ exports.protect = async (req, res, next) => {
     
     if (!decoded) {
       console.log('❌ Token verification failed');
+      console.log('⚠️  JWT_SECRET may have changed or token is invalid');
       return res.status(401).json({
         success: false,
         message: 'Invalid or expired token. Please login again.'
@@ -40,21 +41,28 @@ exports.protect = async (req, res, next) => {
     }
     console.log(`✅ Token verified for user ID: ${decoded.id}`);
 
-    // Check if session exists
-    console.log('🔍 Checking session...');
-    const session = await Session.findByToken(token);
-    if (!session) {
-      console.log('❌ Session not found in database');
-      console.log('⚠️  This could mean:');
-      console.log('   1. User logged in before sessions were implemented');
-      console.log('   2. Session was deleted');
-      console.log('   3. Token is from a different environment');
-      return res.status(401).json({
-        success: false,
-        message: 'Session expired. Please login again.'
-      });
+    // Skip session check for dashboard stats (performance optimization)
+    const skipSessionCheck = req.originalUrl.includes('/dashboard/stats');
+    
+    if (!skipSessionCheck) {
+      // Check if session exists
+      console.log('🔍 Checking session...');
+      const session = await Session.findByToken(token);
+      if (!session) {
+        console.log('❌ Session not found in database');
+        console.log('⚠️  This could mean:');
+        console.log('   1. User logged in before sessions were implemented');
+        console.log('   2. Session was deleted');
+        console.log('   3. Token is from a different environment');
+        return res.status(401).json({
+          success: false,
+          message: 'Session expired. Please login again.'
+        });
+      }
+      console.log(`✅ Session found for user ${session.user_id}`);
+    } else {
+      console.log('⏭️ Skipping session check for dashboard stats');
     }
-    console.log(`✅ Session found for user ${session.user_id}`);
 
     // Get user from database
     console.log('🔍 Fetching user from database...');

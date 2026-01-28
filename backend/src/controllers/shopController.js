@@ -1,5 +1,12 @@
 const db = require('../config/database');
 
+// Database compatibility: SQLite uses different table names than MySQL
+const useSQLite = process.env.USE_SQLITE === 'true' && process.env.NODE_ENV === 'development';
+const ORDER_DETAILS_TABLE = useSQLite ? 'order_items' : 'order_details';
+const INVOICE_DETAILS_TABLE = useSQLite ? 'invoice_items' : 'invoice_details';
+
+console.log(`🔧 Shop Controller: Using tables - Orders: "${ORDER_DETAILS_TABLE}", Invoices: "${INVOICE_DETAILS_TABLE}" (SQLite=${useSQLite})`);
+
 // Get all shops with pagination and filters
 exports.getAllShops = async (req, res) => {
   try {
@@ -309,7 +316,8 @@ exports.deleteShop = async (req, res) => {
     // Check for dependencies (orders, invoices, deliveries)
     const [orders] = await db.query('SELECT COUNT(*) as count FROM orders WHERE shop_id = ?', [id]);
     const [invoices] = await db.query('SELECT COUNT(*) as count FROM invoices WHERE shop_id = ?', [id]);
-    const [deliveries] = await db.query('SELECT COUNT(*) as count FROM deliveries WHERE shop_id = ?', [id]);
+    // SQLite: deliveries table doesn't have shop_id, it's linked through orders
+    const [deliveries] = await db.query('SELECT COUNT(*) as count FROM deliveries WHERE order_id IN (SELECT id FROM orders WHERE shop_id = ?)', [id]);
 
     const hasOrders = orders[0].count > 0;
     const hasInvoices = invoices[0].count > 0;
@@ -338,29 +346,54 @@ exports.deleteShop = async (req, res) => {
       await connection.beginTransaction();
 
       try {
-        // 1. Delete order_details for orders related to this shop
-        await connection.query('DELETE od FROM order_details od INNER JOIN orders o ON od.order_id = o.id WHERE o.shop_id = ?', [id]);
+        // 1. Delete order_details/order_items for orders related to this shop
+        if (useSQLite) {
+          // SQLite doesn't support DELETE with JOIN syntax, use subquery
+          await connection.query(`DELETE FROM ${ORDER_DETAILS_TABLE} WHERE order_id IN (SELECT id FROM orders WHERE shop_id = ?)`, [id]);
+        } else {
+          // MySQL supports DELETE with JOIN
+          await connection.query(`DELETE od FROM ${ORDER_DETAILS_TABLE} od INNER JOIN orders o ON od.order_id = o.id WHERE o.shop_id = ?`, [id]);
+        }
         
         // 2. Delete orders
         await connection.query('DELETE FROM orders WHERE shop_id = ?', [id]);
         
-        // 3. Delete invoice_details for invoices related to this shop
-        await connection.query('DELETE id FROM invoice_details id INNER JOIN invoices i ON id.invoice_id = i.id WHERE i.shop_id = ?', [id]);
+        // 3. Delete invoice_details/invoice_items for invoices related to this shop
+        if (useSQLite) {
+          // SQLite doesn't support DELETE with JOIN syntax, use subquery
+          await connection.query(`DELETE FROM ${INVOICE_DETAILS_TABLE} WHERE invoice_id IN (SELECT id FROM invoices WHERE shop_id = ?)`, [id]);
+        } else {
+          // MySQL supports DELETE with JOIN
+          await connection.query(`DELETE id FROM ${INVOICE_DETAILS_TABLE} id INNER JOIN invoices i ON id.invoice_id = i.id WHERE i.shop_id = ?`, [id]);
+        }
         
         // 4. Delete invoice_payments
-        await connection.query('DELETE ip FROM invoice_payments ip INNER JOIN invoices i ON ip.invoice_id = i.id WHERE i.shop_id = ?', [id]);
+        if (useSQLite) {
+          await connection.query('DELETE FROM invoice_payments WHERE invoice_id IN (SELECT id FROM invoices WHERE shop_id = ?)', [id]);
+        } else {
+          await connection.query('DELETE ip FROM invoice_payments ip INNER JOIN invoices i ON ip.invoice_id = i.id WHERE i.shop_id = ?', [id]);
+        }
         
         // 5. Delete invoices
         await connection.query('DELETE FROM invoices WHERE shop_id = ?', [id]);
         
         // 6. Delete delivery_items for deliveries related to this shop
-        await connection.query('DELETE di FROM delivery_items di INNER JOIN deliveries d ON di.delivery_id = d.id WHERE d.shop_id = ?', [id]);
+        if (useSQLite) {
+          await connection.query('DELETE FROM delivery_items WHERE delivery_id IN (SELECT id FROM deliveries WHERE shop_id = ?)', [id]);
+        } else {
+          await connection.query('DELETE di FROM delivery_items di INNER JOIN deliveries d ON di.delivery_id = d.id WHERE d.shop_id = ?', [id]);
+        }
         
-        // 7. Delete load_sheet_deliveries associations
-        await connection.query('DELETE lsd FROM load_sheet_deliveries lsd INNER JOIN deliveries d ON lsd.delivery_id = d.id WHERE d.shop_id = ?', [id]);
+        // 7. Delete load_sheet_deliveries associations (if table exists)
+        // Deliveries are linked to shop through orders, not directly
+        if (useSQLite) {
+          await connection.query('DELETE FROM load_sheet_deliveries WHERE delivery_id IN (SELECT id FROM deliveries WHERE order_id IN (SELECT id FROM orders WHERE shop_id = ?))', [id]).catch(() => {});
+        } else {
+          await connection.query('DELETE lsd FROM load_sheet_deliveries lsd INNER JOIN deliveries d ON lsd.delivery_id = d.id INNER JOIN orders o ON d.order_id = o.id WHERE o.shop_id = ?', [id]).catch(() => {});
+        }
         
-        // 8. Delete deliveries
-        await connection.query('DELETE FROM deliveries WHERE shop_id = ?', [id]);
+        // 8. Delete deliveries (linked through orders)
+        await connection.query('DELETE FROM deliveries WHERE order_id IN (SELECT id FROM orders WHERE shop_id = ?)', [id]);
         
         // 9. Delete shop_audit_log (will cascade automatically)
         // await connection.query('DELETE FROM shop_audit_log WHERE shop_id = ?', [id]);

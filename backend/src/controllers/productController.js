@@ -445,3 +445,52 @@ exports.bulkImportProducts = async (req, res) => {
     });
   }
 };
+
+// @desc    Get warehouse stock breakdown for a product
+// @route   GET /api/desktop/products/:id/warehouse-stock
+// @access  Private
+exports.getProductWarehouseStock = async (req, res) => {
+  try {
+    const productId = req.params.id;
+    
+    // Check if product exists
+    const product = await Product.findById(productId);
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: 'Product not found'
+      });
+    }
+    
+    const warehouseStock = await Product.getWarehouseStock(productId);
+    
+    // Calculate totals
+    const totals = {
+      totalWarehouses: warehouseStock.length,
+      totalQuantity: warehouseStock.reduce((sum, ws) => sum + parseFloat(ws.quantity || 0), 0),
+      totalReserved: warehouseStock.reduce((sum, ws) => sum + parseFloat(ws.reserved_quantity || 0), 0),
+      totalAvailable: warehouseStock.reduce((sum, ws) => sum + parseFloat(ws.available_quantity || 0), 0)
+    };
+    
+    res.json({
+      success: true,
+      data: {
+        product: {
+          id: product.id,
+          product_code: product.product_code,
+          product_name: product.product_name,
+          global_stock: product.stock_quantity
+        },
+        warehouseStock,
+        totals
+      }
+    });
+  } catch (error) {
+    console.error('Get product warehouse stock error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching warehouse stock',
+      error: error.message
+    });
+  }
+};

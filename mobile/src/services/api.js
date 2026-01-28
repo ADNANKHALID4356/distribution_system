@@ -1,19 +1,18 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getServerUrl } from '../utils/serverConfig';
+import { getServerUrl, getDefaultServerUrl } from '../utils/serverConfig';
 
 // ========================================
 // DYNAMIC API CONFIGURATION
 // ========================================
-// The API base URL is now configurable through the Server Settings screen
+// The API base URL is configurable through the Server Settings screen
 // Users can change the server IP without rebuilding the app
 //
-// DEFAULT CONFIGURATION:
-// - Backend IP: localhost (configure via Server Settings)
-// - Backend Port: 5000
-// - Protocol: HTTP
+// To change DEFAULT server (for all new installs):
+// Edit mobile/src/utils/serverConfig.js -> DEFAULT_CONFIG
 //
-// To change server: Go to Login Screen → Server Settings
+// To change server at runtime:
+// Go to Login Screen → Server Settings
 
 let cachedBaseURL = null;
 
@@ -30,8 +29,8 @@ export const resetApiBaseUrl = () => {
   cachedBaseURL = null;
 };
 
-// Initialize base URL - LOCALHOST for development
-let initialBaseURL = 'http://localhost:5000/api'; // LOCALHOST - configured for local testing
+// Initialize base URL from DEFAULT_CONFIG (single source of truth)
+let initialBaseURL = getDefaultServerUrl();
 getApiBaseUrl().then(url => {
   initialBaseURL = url;
   api.defaults.baseURL = url;
@@ -39,6 +38,7 @@ getApiBaseUrl().then(url => {
 
 const api = axios.create({
   baseURL: initialBaseURL,
+  timeout: 30000, // 30 second timeout for order sync (backend can be slow)
   headers: {
     'Content-Type': 'application/json',
   },

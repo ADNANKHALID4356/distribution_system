@@ -612,9 +612,22 @@ class SyncService {
   async syncOrders(salesmanId, deviceInfo = {}) {
     try {
       console.log('🔄 Starting orders upload (sync to backend)...');
+      console.log('🔍 Salesman ID:', salesmanId);
 
-      // Get all unsynced orders from SQLite
-      const unsyncedOrders = await dbHelper.getUnsyncedOrders();
+      // CRITICAL: Validate salesmanId is provided
+      if (!salesmanId) {
+        console.error('❌ salesmanId is required for syncOrders');
+        return {
+          success: false,
+          error: 'salesmanId is required',
+          total: 0,
+          synced: 0,
+          failed: 0
+        };
+      }
+
+      // Get all unsynced orders from SQLite (filtered by salesmanId)
+      const unsyncedOrders = await dbHelper.getUnsyncedOrders(salesmanId);
       
       if (!unsyncedOrders || unsyncedOrders.length === 0) {
         console.log('✅ No orders to sync');
@@ -682,6 +695,10 @@ class SyncService {
 
           if (response.data.success) {
             const { results } = response.data;
+            const syncedOrders = results?.synced_orders || [];
+            
+            console.log(`🔍 Batch response: ${results.success}/${results.total} synced`);
+            console.log(`🔍 Synced orders array:`, JSON.stringify(syncedOrders, null, 2));
             
             // Update synced orders in SQLite
             for (let j = 0; j < batch.length; j++) {
@@ -692,8 +709,13 @@ class SyncService {
               const error = results.errors?.find(e => e.mobile_order_id === orderData.mobile_order_id);
               
               if (!error) {
-                // Successfully synced
-                await dbHelper.markOrderAsSynced(order.id);
+                // Find the backend_id from synced_orders response
+                const syncedOrder = syncedOrders.find(s => s.mobile_order_id === orderData.mobile_order_id);
+                const backendId = syncedOrder?.backend_id || null;
+                
+                // Successfully synced - mark with backend_id
+                console.log(`✅ Marking order ${order.id} (${order.order_number}) as synced. Backend ID: ${backendId}`);
+                await dbHelper.markOrderAsSynced(order.id, backendId);
                 totalSynced++;
               } else {
                 // Sync failed for this order
@@ -825,6 +847,12 @@ class SyncService {
         console.log('✅ Full sync completed successfully');
       } else {
         console.log('⚠️  Full sync completed with errors');
+        console.log('📊 Sync Results:');
+        console.log('   Products:', results.products.success ? '✅' : '❌', results.products.error || results.products.message);
+        console.log('   Suppliers:', results.suppliers.success ? '✅' : '❌', results.suppliers.error || results.suppliers.message);
+        console.log('   Routes:', results.routes.success ? '✅' : '❌', results.routes.error || results.routes.message);
+        console.log('   Shops:', results.shops.success ? '✅' : '❌', results.shops.error || results.shops.message);
+        console.log('   Salesmen:', results.salesmen.success ? '✅' : '❌', results.salesmen.error || results.salesmen.message);
       }
 
       return {
@@ -1127,9 +1155,25 @@ class SyncService {
       });
 
       if (response.data.success) {
-        // Mark orders as synced
-        for (const order of validOrders) {
-          await dbHelper.markOrderAsSynced(order.id);
+        // Mark orders as synced with backend IDs
+        // Backend returns: { success, message, results: { synced_orders: [...] } }
+        const syncResults = response.data.results?.synced_orders || response.data.data || response.data.orders || [];
+        
+        console.log('🔍 Sync response synced_orders:', JSON.stringify(syncResults, null, 2));
+        
+        for (let i = 0; i < validOrders.length; i++) {
+          const order = validOrders[i];
+          // Find matching backend result by mobile_order_id
+          const backendOrder = syncResults.find(r => r.mobile_order_id === order.order_number);
+          
+          if (backendOrder && backendOrder.backend_id) {
+            console.log(`✅ Marking order ${order.id} as synced with backend_id: ${backendOrder.backend_id}`);
+            await dbHelper.markOrderAsSynced(order.id, backendOrder.backend_id);
+          } else {
+            // Even if no specific backend_id found, mark as synced if overall sync was successful
+            console.log(`⚠️ No specific backend_id for order ${order.id}, marking synced without backend_id`);
+            await dbHelper.markOrderAsSynced(order.id, null);
+          }
         }
 
         return {

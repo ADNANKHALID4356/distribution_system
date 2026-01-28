@@ -14,40 +14,49 @@
 
 const db = require('../config/database');
 
+// Database compatibility check
+const useSQLite = process.env.USE_SQLITE === 'true' && process.env.NODE_ENV === 'development';
+
 class ShopLedger {
   /**
    * Create a ledger entry (called automatically from Invoice/Payment models)
    * @param {Object} entryData - Ledger entry data
+   * @param {Object} existingConnection - Optional existing database connection for transaction
    * @returns {Promise<Object>} Created ledger entry with balance
    */
-  async createEntry(entryData) {
+  async createEntry(entryData, existingConnection = null) {
     console.log('📒 [SHOP LEDGER] Creating ledger entry...');
+    console.log('📒 [SHOP LEDGER] Entry data:', JSON.stringify(entryData, null, 2));
     
-    const connection = await db.getConnection();
+    const connection = existingConnection || await db.getConnection();
+    const isOwnConnection = !existingConnection;
+    
     try {
-      await connection.beginTransaction();
+      if (isOwnConnection) {
+        await connection.beginTransaction();
+      }
       
-      // Get previous balance for this shop
+      // Get previous balance for this shop (most recent entry by ID for accuracy)
       const [prevEntries] = await connection.query(`
         SELECT balance FROM shop_ledger 
         WHERE shop_id = ? 
-        ORDER BY transaction_date DESC, id DESC 
+        ORDER BY id DESC 
         LIMIT 1
       `, [entryData.shop_id]);
       
       const previousBalance = prevEntries.length > 0 ? parseFloat(prevEntries[0].balance) : 0;
       
-      // Calculate new balance (PREPAID CREDIT SYSTEM)
-      // Balance = Shop's credit/prepaid amount with warehouse
-      // Debit (Payment from shop): Increases credit balance
-      // Credit (Invoice/Purchase): Decreases credit balance (uses credit)
-      // Positive balance = Shop has credit with us (prepaid)
-      // Negative balance = Shop owes us (debt)
+      // Calculate new balance (DEBT TRACKING SYSTEM)
+      // Balance = Shop's debt/credit owed to warehouse
+      // Credit (Invoice): Adds to balance (shop owes more money)
+      // Debit (Payment from shop): Reduces balance (shop pays off debt)
+      // Positive balance = Shop owes us money (debt)
+      // Negative balance = Shop has credit with us (overpaid)
       const debitAmount = parseFloat(entryData.debit_amount) || 0;
       const creditAmount = parseFloat(entryData.credit_amount) || 0;
-      const newBalance = previousBalance + debitAmount - creditAmount;
+      const newBalance = previousBalance + creditAmount - debitAmount;
       
-      console.log(`💰 Previous Balance: ${previousBalance}, Debit (Payment): ${debitAmount}, Credit (Invoice): ${creditAmount}, New Balance: ${newBalance}`);
+      console.log(`💰 Previous Balance: ${previousBalance}, Credit (Invoice): +${creditAmount}, Debit (Payment): -${debitAmount}, New Balance: ${newBalance}`);
       
       // Insert ledger entry
       const [result] = await connection.query(`
@@ -83,8 +92,10 @@ class ShopLedger {
         WHERE id = ?
       `, [newBalance, entryData.transaction_date || new Date(), entryData.shop_id]);
       
-      await connection.commit();
-      connection.release();
+      if (isOwnConnection) {
+        await connection.commit();
+        connection.release();
+      }
       
       console.log(`✅ [SHOP LEDGER] Entry created for shop ${entryData.shop_id}, new balance: ${newBalance}`);
       
@@ -95,9 +106,259 @@ class ShopLedger {
         ...entryData
       };
     } catch (error) {
+      if (isOwnConnection) {
+        await connection.rollback();
+        connection.release();
+      }
+      console.error('❌ [SHOP LEDGER] Error creating entry:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Recalculate all balances for a shop (fixes inconsistencies)
+   * @param {number} shopId - Shop ID
+   * @returns {Promise<Object>} Recalculation result
+   */
+  async recalculateBalances(shopId) {
+    console.log(`🔄 [SHOP LEDGER] Recalculating balances for shop ${shopId}...`);
+    
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      
+      // Get all entries for this shop ordered by date and id
+      const [entries] = await connection.query(`
+        SELECT id, debit_amount, credit_amount, transaction_date
+        FROM shop_ledger 
+        WHERE shop_id = ? 
+        ORDER BY transaction_date ASC, id ASC
+      `, [shopId]);
+      
+      let runningBalance = 0;
+      let updatedCount = 0;
+      
+      for (const entry of entries) {
+        const debit = parseFloat(entry.debit_amount) || 0;
+        const credit = parseFloat(entry.credit_amount) || 0;
+        // Credit (Invoice) ADDS to balance, Debit (Payment) SUBTRACTS
+        runningBalance = runningBalance + credit - debit;
+        
+        await connection.query(
+          'UPDATE shop_ledger SET balance = ? WHERE id = ?',
+          [runningBalance, entry.id]
+        );
+        updatedCount++;
+      }
+      
+      // Update shop's current balance
+      await connection.query(
+        'UPDATE shops SET current_balance = ? WHERE id = ?',
+        [runningBalance, shopId]
+      );
+      
+      await connection.commit();
+      connection.release();
+      
+      console.log(`✅ [SHOP LEDGER] Recalculated ${updatedCount} entries. Final balance: ${runningBalance}`);
+      
+      return {
+        shop_id: shopId,
+        entries_updated: updatedCount,
+        final_balance: runningBalance
+      };
+    } catch (error) {
       await connection.rollback();
       connection.release();
-      console.error('❌ [SHOP LEDGER] Error creating entry:', error);
+      console.error('❌ [SHOP LEDGER] Error recalculating balances:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Clear transaction history for a shop (ADMIN ONLY)
+   * Only removes ledger entries, preserves shop and invoice data
+   * @param {number} shopId - Shop ID
+   * @param {Object} options - Options like retain_opening_balance
+   * @returns {Promise<Object>} Clear result
+   */
+  async clearTransactionHistory(shopId, options = {}) {
+    console.log(`🗑️ [SHOP LEDGER] Clearing transaction history for shop ${shopId}...`);
+    
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      
+      // Get shop details
+      const [shops] = await connection.query(
+        'SELECT * FROM shops WHERE id = ?',
+        [shopId]
+      );
+      
+      if (shops.length === 0) {
+        throw new Error('Shop not found');
+      }
+      
+      const shop = shops[0];
+      
+      // Get current ledger stats before clearing
+      const [stats] = await connection.query(`
+        SELECT 
+          COUNT(*) as total_entries,
+          SUM(debit_amount) as total_debits,
+          SUM(credit_amount) as total_credits
+        FROM shop_ledger WHERE shop_id = ?
+      `, [shopId]);
+      
+      // Get the actual last balance (most recent entry by ID)
+      const [lastEntry] = await connection.query(`
+        SELECT balance FROM shop_ledger 
+        WHERE shop_id = ? 
+        ORDER BY id DESC LIMIT 1
+      `, [shopId]);
+      
+      const previousStats = {
+        ...stats[0],
+        last_balance: lastEntry.length > 0 ? parseFloat(lastEntry[0].balance) : 0
+      };
+      
+      // Delete all ledger entries for this shop
+      const [deleteResult] = await connection.query(
+        'DELETE FROM shop_ledger WHERE shop_id = ?',
+        [shopId]
+      );
+      
+      // Get the number of deleted rows
+      const deletedCount = deleteResult?.affectedRows || deleteResult?.changes || parseInt(previousStats.total_entries) || 0;
+      console.log(`🗑️ [SHOP LEDGER] Delete result:`, deleteResult, `Deleted count: ${deletedCount}`);
+      
+      // Reset shop balance to zero (or create opening balance entry if requested)
+      if (options.retain_opening_balance && previousStats.last_balance !== 0) {
+        // Create opening balance entry with the previous balance
+        await connection.query(`
+          INSERT INTO shop_ledger (
+            shop_id, shop_name, transaction_date, transaction_type,
+            reference_type, reference_number,
+            debit_amount, credit_amount, balance,
+            description, is_manual, created_at
+          ) VALUES (?, ?, datetime('now'), 'opening_balance', 'system', 'OB-RESET', ?, ?, ?, 'Opening Balance after history clear', 1, datetime('now'))
+        `, [
+          shopId,
+          shop.shop_name,
+          previousStats.last_balance > 0 ? previousStats.last_balance : 0,
+          previousStats.last_balance < 0 ? Math.abs(previousStats.last_balance) : 0,
+          previousStats.last_balance || 0
+        ]);
+        
+        // Also update shop's current_balance to match
+        await connection.query(
+          'UPDATE shops SET current_balance = ? WHERE id = ?',
+          [previousStats.last_balance, shopId]
+        );
+        
+        console.log(`📒 [SHOP LEDGER] Created opening balance entry: ${previousStats.last_balance}`);
+      } else {
+        // Reset shop balance to zero
+        await connection.query(
+          'UPDATE shops SET current_balance = 0 WHERE id = ?',
+          [shopId]
+        );
+      }
+      
+      await connection.commit();
+      connection.release();
+      
+      console.log(`✅ [SHOP LEDGER] Cleared ${deletedCount} entries for shop ${shopId}`);
+      
+      return {
+        shop_id: shopId,
+        shop_name: shop.shop_name,
+        entries_deleted: deletedCount,
+        previous_total_debits: previousStats.total_debits,
+        previous_total_credits: previousStats.total_credits,
+        previous_balance: previousStats.last_balance,
+        new_balance: options.retain_opening_balance ? previousStats.last_balance : 0,
+        message: 'Transaction history cleared successfully'
+      };
+    } catch (error) {
+      await connection.rollback();
+      connection.release();
+      console.error('❌ [SHOP LEDGER] Error clearing history:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Sync missing invoice ledger entries for a shop
+   * Creates ledger entries for invoices that don't have them
+   * @param {number} shopId - Shop ID
+   * @returns {Promise<Object>} Sync result
+   */
+  async syncMissingInvoiceEntries(shopId) {
+    console.log(`🔄 [SHOP LEDGER] Syncing missing invoice entries for shop ${shopId}...`);
+    
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      
+      // Get shop details
+      const [shops] = await connection.query('SELECT * FROM shops WHERE id = ?', [shopId]);
+      if (shops.length === 0) {
+        throw new Error('Shop not found');
+      }
+      const shop = shops[0];
+      
+      // Find invoices that don't have ledger entries
+      const [missingInvoices] = await connection.query(`
+        SELECT i.* FROM invoices i
+        LEFT JOIN shop_ledger sl ON sl.reference_type = 'invoice' AND sl.reference_id = i.id
+        WHERE i.shop_id = ? AND sl.id IS NULL
+        ORDER BY i.invoice_date ASC, i.id ASC
+      `, [shopId]);
+      
+      console.log(`📋 Found ${missingInvoices.length} invoices without ledger entries`);
+      
+      let createdCount = 0;
+      
+      for (const invoice of missingInvoices) {
+        // Create ledger entry for this invoice
+        await connection.query(`
+          INSERT INTO shop_ledger (
+            shop_id, shop_name, transaction_date, transaction_type,
+            reference_type, reference_id, reference_number,
+            debit_amount, credit_amount, balance,
+            description, is_manual, created_at
+          ) VALUES (?, ?, ?, 'invoice', 'invoice', ?, ?, 0, ?, 0, ?, 0, datetime('now'))
+        `, [
+          shopId,
+          shop.shop_name,
+          invoice.invoice_date,
+          invoice.id,
+          invoice.invoice_number,
+          parseFloat(invoice.net_amount) || parseFloat(invoice.total_amount) || 0,
+          `Invoice ${invoice.invoice_number}`
+        ]);
+        createdCount++;
+      }
+      
+      await connection.commit();
+      connection.release();
+      
+      // If we created entries, recalculate balances
+      if (createdCount > 0) {
+        console.log(`✅ Created ${createdCount} missing ledger entries, now recalculating balances...`);
+        await this.recalculateBalances(shopId);
+      }
+      
+      return {
+        shop_id: shopId,
+        invoices_synced: createdCount,
+        message: `Synced ${createdCount} missing invoice entries`
+      };
+    } catch (error) {
+      await connection.rollback();
+      connection.release();
+      console.error('❌ [SHOP LEDGER] Error syncing invoice entries:', error);
       throw error;
     }
   }
@@ -110,6 +371,36 @@ class ShopLedger {
    */
   async getShopLedger(shopId, filters = {}) {
     console.log(`📒 [SHOP LEDGER] Getting ledger for shop ${shopId}...`);
+    
+    // Check if shop_ledger table exists (important for fresh databases)
+    try {
+      if (useSQLite) {
+        const [tables] = await db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='shop_ledger'");
+        if (tables.length === 0) {
+          console.log('⚠️ [SHOP LEDGER] Table does not exist yet - returning empty ledger');
+          const [shops] = await db.query('SELECT * FROM shops WHERE id = ?', [shopId]);
+          return {
+            shop: shops[0] || null,
+            entries: [],
+            pagination: { page: 1, limit: 50, total: 0, totalPages: 0 }
+          };
+        }
+      } else {
+        const [tables] = await db.query("SHOW TABLES LIKE 'shop_ledger'");
+        if (tables.length === 0) {
+          console.log('⚠️ [SHOP LEDGER] Table does not exist yet - returning empty ledger');
+          const [shops] = await db.query('SELECT * FROM shops WHERE id = ?', [shopId]);
+          return {
+            shop: shops[0] || null,
+            entries: [],
+            pagination: { page: 1, limit: 50, total: 0, totalPages: 0 }
+          };
+        }
+      }
+    } catch (tableCheckError) {
+      console.error('⚠️ [SHOP LEDGER] Error checking table existence:', tableCheckError.message);
+      // Continue anyway - let the actual query handle the error
+    }
     
     const {
       page = 1,
@@ -141,11 +432,11 @@ class ShopLedger {
     
     const whereClause = whereConditions.join(' AND ');
     
-    // Get ledger entries
+    // Get ledger entries - ORDER BY id DESC ensures newest entries (highest ID) appear first
     const [entries] = await db.query(`
       SELECT * FROM shop_ledger
       WHERE ${whereClause}
-      ORDER BY transaction_date DESC, id DESC
+      ORDER BY id DESC
       LIMIT ? OFFSET ?
     `, [...queryParams, limit, offset]);
     
@@ -157,10 +448,10 @@ class ShopLedger {
     
     const total = countResult[0].total;
     
-    // Get shop details
+    // Get shop details - use id DESC to get the most recent balance
     const [shops] = await db.query(`
       SELECT s.*, 
-        (SELECT balance FROM shop_ledger WHERE shop_id = s.id ORDER BY transaction_date DESC, id DESC LIMIT 1) as current_balance
+        (SELECT balance FROM shop_ledger WHERE shop_id = s.id ORDER BY id DESC LIMIT 1) as current_balance
       FROM shops s
       WHERE s.id = ?
     `, [shopId]);
