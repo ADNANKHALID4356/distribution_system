@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
 import { Text, TextInput, Button, Card, HelperText, ActivityIndicator, Divider, IconButton } from 'react-native-paper';
-import { getServerConfig, setServerConfig, testServerConnection } from '../utils/serverConfig';
+import { getServerConfig, setServerConfig, testServerConnection, getDefaultConfig } from '../utils/serverConfig';
 
 const ServerConfigScreen = ({ navigation }) => {
-  const [config, setConfig] = useState({ host: 'localhost', port: '5000', protocol: 'http' });
+  // Use production defaults as initial state (VPS: 147.93.108.205:5001)
+  const [config, setConfig] = useState(getDefaultConfig());
   const [loading, setLoading] = useState(true);
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);

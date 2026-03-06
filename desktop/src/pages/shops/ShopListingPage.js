@@ -9,6 +9,7 @@ const ShopListingPage = () => {
   const [routes, setRoutes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -32,6 +33,7 @@ const ShopListingPage = () => {
       setError('');
     } catch (err) {
       setError(err.message || 'Failed to fetch data');
+      setTimeout(() => setError(''), 5000);
       console.error('Fetch error:', err);
     } finally {
       setLoading(false);
@@ -42,33 +44,49 @@ const ShopListingPage = () => {
     try {
       setLoading(true);
       const params = {
-        limit: 100,
-        search: searchTerm,
-        route_id: filterRoute,
-        city: filterCity,
-        is_active: filterStatus
+        limit: 100
       };
+      
+      // Only add non-empty parameters
+      if (searchTerm.trim()) params.search = searchTerm.trim();
+      if (filterRoute) params.route_id = filterRoute;
+      if (filterCity.trim()) params.city = filterCity.trim();
+      if (filterStatus) params.is_active = filterStatus;
+      
       const response = await shopService.getAllShops(params);
       setShops(response.data);
       setError('');
     } catch (err) {
       setError(err.message || 'Failed to search shops');
+      setTimeout(() => setError(''), 5000);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleClearFilters = () => {
+    setSearchTerm('');
+    setFilterRoute('');
+    setFilterCity('');
+    setFilterStatus('');
+    fetchInitialData();
+  };
+
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      handleSearch();
     }
   };
 
   const handleDelete = async (id, shopName) => {
     try {
       // First attempt: Try normal delete
-      const confirmDelete = window.confirm(`Are you sure you want to delete shop "${shopName}"?`);
-      if (!confirmDelete) return;
-
       setLoading(true);
       await shopService.deleteShop(id, false);
       
       // Success - shop deleted
-      alert(`✓ Shop "${shopName}" deleted successfully`);
+      setSuccess(`Shop "${shopName}" deleted successfully`);
+      setTimeout(() => setSuccess(''), 5000);
       fetchInitialData();
       
     } catch (err) {
@@ -80,44 +98,13 @@ const ShopListingPage = () => {
         if (invoices > 0) dependencyMsg.push(`${invoices} invoice(s)`);
         if (deliveries > 0) dependencyMsg.push(`${deliveries} delivery(ies)`);
         
-        // Show admin override confirmation
-        const forceDelete = window.confirm(
-          `⚠️ WARNING: Shop "${shopName}" has existing data:\n\n` +
-          `${dependencyMsg.join(', ')}\n\n` +
-          `🔴 ADMIN OVERRIDE REQUIRED:\n` +
-          `Clicking OK will permanently delete:\n` +
-          `- The shop\n` +
-          `- All related orders\n` +
-          `- All related invoices\n` +
-          `- All related deliveries\n\n` +
-          `This action CANNOT be undone!\n\n` +
-          `Do you want to proceed with force deletion?`
-        );
-        
-        if (forceDelete) {
-          try {
-            setLoading(true);
-            const result = await shopService.deleteShop(id, true);
-            
-            alert(
-              `✓ Shop "${shopName}" deleted successfully (Admin Override)\n\n` +
-              `Deleted:\n` +
-              `- ${result.deleted?.orders || 0} order(s)\n` +
-              `- ${result.deleted?.invoices || 0} invoice(s)\n` +
-              `- ${result.deleted?.deliveries || 0} delivery(ies)`
-            );
-            
-            fetchInitialData();
-          } catch (forceErr) {
-            setError(forceErr.message || 'Failed to force delete shop');
-            console.error('Force delete error:', forceErr);
-          } finally {
-            setLoading(false);
-          }
-        }
+        // Shop has dependencies - inform user
+        setError(`Cannot delete shop "${shopName}": has ${dependencyMsg.join(', ')}`);
+        setTimeout(() => setError(''), 8000);
       } else {
         // Other error
         setError(err.message || 'Failed to delete shop');
+        setTimeout(() => setError(''), 5000);
         console.error('Delete error:', err);
       }
     } finally {
@@ -145,10 +132,110 @@ const ShopListingPage = () => {
     return 'text-green-600';
   };
 
+  const handlePrint = () => {
+    window.print();
+  };
+
   return (
-    <div className="container mx-auto px-4 py-6">
+    <>
+      <style>{`
+        @page {
+          size: A4 landscape;
+          margin: 10mm 15mm;
+        }
+        @media print {
+          * {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+          body * {
+            visibility: hidden;
+          }
+          #print-area, #print-area * {
+            visibility: visible;
+          }
+          #print-area {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            max-width: 100%;
+            padding: 0;
+            margin: 0;
+          }
+          .no-print {
+            display: none !important;
+          }
+          .print-only {
+            display: block !important;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: auto;
+            font-size: 9px;
+          }
+          th, td {
+            border: 1px solid #333;
+            padding: 3px 4px;
+            font-size: 9px;
+            text-align: left;
+          }
+          th {
+            background-color: #e0e0e0 !important;
+            font-weight: bold;
+            font-size: 9px;
+          }
+          td {
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+          /* Column widths for landscape */
+          th:nth-child(1) { width: 20%; } /* Shop Name */
+          th:nth-child(2) { width: 15%; } /* Owner */
+          th:nth-child(3) { width: 18%; } /* Phone */
+          th:nth-child(4) { width: 15%; } /* City */
+          th:nth-child(5) { width: 16%; } /* Credit Limit */
+          th:nth-child(6) { width: 16%; } /* Balance */
+          td:nth-child(3),
+          th:nth-child(3) {
+            white-space: nowrap;
+          }
+          .print-header {
+            text-align: center;
+            margin-bottom: 10px;
+            page-break-after: avoid;
+          }
+          .print-header h1 {
+            font-size: 18px;
+            margin: 0 0 5px 0;
+            font-weight: bold;
+          }
+          .print-header p {
+            margin: 2px 0;
+            font-size: 10px;
+          }
+          tbody {
+            page-break-inside: auto;
+          }
+          tr {
+            page-break-inside: avoid;
+            page-break-after: auto;
+          }
+        }
+      `}</style>
+      <div className="container mx-auto px-4 py-6" id="print-area">
+      {/* Print Header - Only visible when printing */}
+      <div className="print-only" style={{ display: 'none' }}>
+        <div className="print-header">
+          <h1>Shop Management Report</h1>
+          <p>Generated on: {new Date().toLocaleDateString('en-PK', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+          <p>Total Shops: {shops.length}</p>
+        </div>
+      </div>
+
       {/* Header */}
-      <div className="mb-6">
+      <div className="mb-6 no-print">
         <div className="flex items-center mb-4">
           <button
             onClick={() => navigate('/dashboard')}
@@ -160,32 +247,51 @@ const ShopListingPage = () => {
         </div>
         <div className="flex justify-between items-center">
           <h1 className="text-3xl font-bold text-gray-800">Shop Management</h1>
-          <button
-            onClick={() => navigate('/shops/add')}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg flex items-center gap-2"
-          >
-            <span>+</span>
-            <span>Add Shop</span>
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={handlePrint}
+              className="bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded-lg flex items-center gap-2 no-print"
+            >
+              <span>🖨️</span>
+              <span>Print List</span>
+            </button>
+            <button
+              onClick={() => navigate('/shops/add')}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg flex items-center gap-2"
+            >
+              <span>+</span>
+              <span>Add Shop</span>
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Error Alert */}
       {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-          {error}
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 no-print flex justify-between items-center">
+          <span>{error}</span>
+          <button onClick={() => setError('')} className="text-red-700 hover:text-red-900 font-bold">&times;</button>
+        </div>
+      )}
+
+      {/* Success Alert */}
+      {success && (
+        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4 no-print flex justify-between items-center">
+          <span>{success}</span>
+          <button onClick={() => setSuccess('')} className="text-green-700 hover:text-green-900 font-bold">&times;</button>
         </div>
       )}
 
       {/* Filters */}
-      <div className="bg-white rounded-lg shadow p-4 mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+      <div className="bg-white rounded-lg shadow p-4 mb-6 no-print">
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
           <div>
             <input
               type="text"
               placeholder="Search shop name, owner, phone..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
+              onKeyPress={handleKeyPress}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
@@ -207,6 +313,7 @@ const ShopListingPage = () => {
               placeholder="Filter by city..."
               value={filterCity}
               onChange={(e) => setFilterCity(e.target.value)}
+              onKeyPress={handleKeyPress}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
@@ -229,6 +336,14 @@ const ShopListingPage = () => {
               Search
             </button>
           </div>
+          <div>
+            <button
+              onClick={handleClearFilters}
+              className="w-full bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md"
+            >
+              Clear
+            </button>
+          </div>
         </div>
       </div>
 
@@ -238,7 +353,7 @@ const ShopListingPage = () => {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase no-print">
                   Shop Code
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
@@ -253,7 +368,7 @@ const ShopListingPage = () => {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   City
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase no-print">
                   Route
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
@@ -262,10 +377,10 @@ const ShopListingPage = () => {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   Balance
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase no-print">
                   Status
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase no-print">
                   Actions
                 </th>
               </tr>
@@ -286,7 +401,7 @@ const ShopListingPage = () => {
               ) : (
                 shops.map((shop) => (
                   <tr key={shop.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 no-print">
                       {shop.shop_code}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
@@ -301,7 +416,7 @@ const ShopListingPage = () => {
                     <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
                       {shop.city}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-700">
+                    <td className="px-4 py-3 text-sm text-gray-700 no-print">
                       {getRouteName(shop.route_id)}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
@@ -310,7 +425,7 @@ const ShopListingPage = () => {
                     <td className={`px-4 py-3 whitespace-nowrap text-sm font-semibold ${getCreditStatusColor(shop.current_balance, shop.credit_limit)}`}>
                       {formatCurrency(shop.current_balance)}
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
+                    <td className="px-4 py-3 whitespace-nowrap no-print">
                       <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
                         shop.is_active 
                           ? 'bg-green-100 text-green-800' 
@@ -319,7 +434,7 @@ const ShopListingPage = () => {
                         {shop.is_active ? 'Active' : 'Inactive'}
                       </span>
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium space-x-2">
+                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium space-x-2 no-print">
                       <button
                         onClick={() => navigate(`/ledger/shop/${shop.id}`)}
                         className="text-purple-600 hover:text-purple-900 font-semibold"
@@ -347,7 +462,8 @@ const ShopListingPage = () => {
           </table>
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 };
 

@@ -286,6 +286,15 @@
   background: #a7f3d0;
 }
 
+.btn-ledger {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.btn-ledger:hover {
+  background: #bfdbfe;
+}
+
 .btn-credentials {
   background: #e0e7ff;
   color: #4f46e5;
@@ -445,6 +454,18 @@
 
 .modal-body strong {
   color: #dc2626;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 600;
+  color: #374151;
+  font-size: 14px;
 }
 
 .modal-actions {

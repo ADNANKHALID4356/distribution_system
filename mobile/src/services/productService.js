@@ -78,6 +78,56 @@ class ProductService {
   }
 
   /**
+   * Force sync products from server (refresh from API)
+   * This will update local database with latest data from backend
+   */
+  async syncProductsFromServer() {
+    try {
+      console.log('🔄 Starting product sync from server...');
+      
+      // Check if online
+      const online = await this.isOnline();
+      if (!online) {
+        return {
+          success: false,
+          message: 'Cannot sync - No internet connection',
+        };
+      }
+
+      // Fetch from API
+      const response = await api.get('/shared/products/active');
+      
+      if (response.data.success) {
+        const apiProducts = response.data.data || [];
+        console.log(`📥 Received ${apiProducts.length} products from server`);
+        
+        // Clear existing products and save new ones
+        await dbHelper.clearProducts();
+        await dbHelper.upsertProducts(apiProducts);
+        
+        console.log('✅ Product sync completed successfully');
+        return {
+          success: true,
+          data: apiProducts,
+          message: `Successfully synced ${apiProducts.length} products from server`,
+        };
+      } else {
+        return {
+          success: false,
+          message: response.data.message || 'Failed to sync products',
+        };
+      }
+    } catch (error) {
+      console.error('❌ Error syncing products:', error);
+      return {
+        success: false,
+        message: error.message || 'Failed to sync products from server',
+        error: error,
+      };
+    }
+  }
+
+  /**
    * Search products by name, code, or barcode
    */
   async searchProducts(searchTerm) {

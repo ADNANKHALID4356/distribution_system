@@ -33,6 +33,8 @@ const AddEditSalesmanPage = () => {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   useEffect(() => {
     if (isEditMode) {
@@ -71,7 +73,8 @@ const AddEditSalesmanPage = () => {
       }
     } catch (error) {
       console.error('Error fetching salesman:', error);
-      alert('Failed to fetch salesman data: ' + (error.response?.data?.message || error.message));
+      setError('Failed to fetch salesman data: ' + (error.response?.data?.message || error.message));
+      setTimeout(() => setError(''), 5000);
     } finally {
       setLoading(false);
     }
@@ -158,7 +161,8 @@ const AddEditSalesmanPage = () => {
     e.preventDefault();
 
     if (!validateForm()) {
-      alert('Please fix the errors in the form');
+      setError('Please fix the errors in the form');
+      setTimeout(() => setError(''), 5000);
       return;
     }
 
@@ -181,22 +185,22 @@ const AddEditSalesmanPage = () => {
       if (response.success) {
         if (!isEditMode && response.data.login_credentials) {
           // Show credentials to admin
-          alert(
-            `✅ Salesman created successfully!\n\n` +
-            `🔐 Login Credentials Generated:\n` +
-            `Username: ${response.data.login_credentials.username}\n` +
-            `Password: ${response.data.login_credentials.password}\n\n` +
-            `⚠️ IMPORTANT: Please copy and share these credentials with the salesman.\n` +
-            `Password cannot be retrieved later!`
+          setSuccess(
+            `✅ Salesman created successfully! ` +
+            `Login Credentials - Username: ${response.data.login_credentials.username}, ` +
+            `Password: ${response.data.login_credentials.password} - ` +
+            `⚠️ IMPORTANT: Copy and share these credentials. Password cannot be retrieved later!`
           );
+          setTimeout(() => navigate('/salesmen'), 8000);
         } else {
-          alert(isEditMode ? 'Salesman updated successfully!' : 'Salesman created successfully!');
+          setSuccess(isEditMode ? 'Salesman updated successfully!' : 'Salesman created successfully!');
+          setTimeout(() => navigate('/salesmen'), 2000);
         }
-        navigate('/salesmen');
       }
     } catch (error) {
       console.error('Error saving salesman:', error);
-      alert('Failed to save salesman: ' + (error.response?.data?.message || error.message));
+      setError('Failed to save salesman: ' + (error.response?.data?.message || error.message));
+      setTimeout(() => setError(''), 5000);
     } finally {
       setLoading(false);
     }
@@ -210,6 +214,22 @@ const AddEditSalesmanPage = () => {
           ← Back to List
         </button>
       </div>
+
+      {/* Error Alert */}
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 flex justify-between items-center">
+          <span>{error}</span>
+          <button onClick={() => setError('')} className="text-red-700 hover:text-red-900 font-bold">&times;</button>
+        </div>
+      )}
+
+      {/* Success Alert */}
+      {success && (
+        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4 flex justify-between items-center">
+          <span>{success}</span>
+          <button onClick={() => setSuccess('')} className="text-green-700 hover:text-green-900 font-bold">&times;</button>
+        </div>
+      )}
 
       <form className="salesman-form" onSubmit={handleSubmit}>
         <div className="form-section">

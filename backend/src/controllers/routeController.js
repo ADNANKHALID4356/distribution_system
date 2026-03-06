@@ -277,3 +277,173 @@ exports.getRouteStats = async (req, res) => {
     });
   }
 };
+
+// Get route-wise consolidated bill
+// Shows all deliveries for a route within a date range, grouped by shop
+exports.getRouteConsolidatedBill = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { start_date, end_date } = req.query;
+
+    // Validate route exists
+    const [routes] = await db.query('SELECT * FROM routes WHERE id = ?', [id]);
+    if (routes.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Route not found'
+      });
+    }
+    const route = routes[0];
+
+    // Build date filter
+    let dateFilter = '';
+    const params = [id];
+    if (start_date) {
+      dateFilter += ' AND DATE(d.delivery_date) >= ?';
+      params.push(start_date);
+    }
+    if (end_date) {
+      dateFilter += ' AND DATE(d.delivery_date) <= ?';
+      params.push(end_date);
+    }
+
+    // Get all deliveries for this route with shop details
+    const [deliveries] = await db.query(`
+      SELECT 
+        d.id as delivery_id,
+        d.challan_number,
+        d.delivery_date,
+        d.shop_id,
+        d.shop_name,
+        d.shop_address,
+        d.shop_contact,
+        d.salesman_name,
+        d.status,
+        d.total_items,
+        d.total_quantity,
+        d.subtotal,
+        d.discount_percentage,
+        d.discount_amount,
+        d.grand_total,
+        d.total_amount
+      FROM deliveries d
+      WHERE d.route_id = ? ${dateFilter}
+      ORDER BY d.shop_name ASC, d.delivery_date DESC
+    `, params);
+
+    // Get delivery items for all deliveries in one query
+    if (deliveries.length > 0) {
+      const deliveryIds = deliveries.map(d => d.delivery_id);
+      const placeholders = deliveryIds.map(() => '?').join(',');
+      
+      const [items] = await db.query(`
+        SELECT 
+          di.delivery_id,
+          di.product_id,
+          di.product_name,
+          di.product_code,
+          di.quantity_ordered,
+          di.quantity_delivered,
+          di.quantity_returned,
+          di.unit_price,
+          di.total_price,
+          di.discount_percentage,
+          di.discount_amount,
+          di.net_amount
+        FROM delivery_items di
+        WHERE di.delivery_id IN (${placeholders})
+        ORDER BY di.product_name ASC
+      `, deliveryIds);
+
+      // Attach items to deliveries
+      const itemsByDelivery = {};
+      items.forEach(item => {
+        if (!itemsByDelivery[item.delivery_id]) {
+          itemsByDelivery[item.delivery_id] = [];
+        }
+        itemsByDelivery[item.delivery_id].push(item);
+      });
+
+      deliveries.forEach(d => {
+        d.items = itemsByDelivery[d.delivery_id] || [];
+      });
+    }
+
+    // Group deliveries by shop
+    const shopGroups = {};
+    deliveries.forEach(d => {
+      if (!shopGroups[d.shop_id]) {
+        shopGroups[d.shop_id] = {
+          shop_id: d.shop_id,
+          shop_name: d.shop_name,
+          shop_address: d.shop_address,
+          shop_contact: d.shop_contact,
+          deliveries: [],
+          total_deliveries: 0,
+          total_amount: 0,
+          total_discount: 0,
+          grand_total: 0
+        };
+      }
+      shopGroups[d.shop_id].deliveries.push(d);
+      shopGroups[d.shop_id].total_deliveries++;
+      shopGroups[d.shop_id].total_amount += parseFloat(d.subtotal || d.total_amount || 0);
+      shopGroups[d.shop_id].total_discount += parseFloat(d.discount_amount || 0);
+      shopGroups[d.shop_id].grand_total += parseFloat(d.grand_total || d.total_amount || 0);
+    });
+
+    // Build product-wise summary across all shops
+    const productSummary = {};
+    deliveries.forEach(d => {
+      (d.items || []).forEach(item => {
+        const key = item.product_id;
+        if (!productSummary[key]) {
+          productSummary[key] = {
+            product_id: item.product_id,
+            product_name: item.product_name,
+            product_code: item.product_code,
+            total_quantity_ordered: 0,
+            total_quantity_delivered: 0,
+            total_quantity_returned: 0,
+            total_amount: 0,
+            total_discount: 0,
+            net_amount: 0
+          };
+        }
+        productSummary[key].total_quantity_ordered += parseFloat(item.quantity_ordered || 0);
+        productSummary[key].total_quantity_delivered += parseFloat(item.quantity_delivered || 0);
+        productSummary[key].total_quantity_returned += parseFloat(item.quantity_returned || 0);
+        productSummary[key].total_amount += parseFloat(item.total_price || 0);
+        productSummary[key].total_discount += parseFloat(item.discount_amount || 0);
+        productSummary[key].net_amount += parseFloat(item.net_amount || item.total_price || 0);
+      });
+    });
+
+    // Calculate route totals
+    const routeTotals = {
+      total_shops: Object.keys(shopGroups).length,
+      total_deliveries: deliveries.length,
+      total_amount: deliveries.reduce((sum, d) => sum + parseFloat(d.subtotal || d.total_amount || 0), 0),
+      total_discount: deliveries.reduce((sum, d) => sum + parseFloat(d.discount_amount || 0), 0),
+      grand_total: deliveries.reduce((sum, d) => sum + parseFloat(d.grand_total || d.total_amount || 0), 0)
+    };
+
+    res.json({
+      success: true,
+      data: {
+        route,
+        date_range: { start_date: start_date || 'all', end_date: end_date || 'all' },
+        totals: routeTotals,
+        shops: Object.values(shopGroups),
+        product_summary: Object.values(productSummary).sort((a, b) => a.product_name.localeCompare(b.product_name))
+      }
+    });
+  } catch (error) {
+    console.error('Get route consolidated bill error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to generate consolidated bill',
+      error: error.message
+    });
+  }
+};

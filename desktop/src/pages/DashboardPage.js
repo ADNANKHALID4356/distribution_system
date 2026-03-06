@@ -9,14 +9,13 @@ import {
   TruckIcon,
   ArrowRightOnRectangleIcon,
   MapPinIcon,
-  BuildingStorefrontIcon,
-  DocumentTextIcon,
   CubeIcon,
   ClipboardDocumentListIcon,
   Cog6ToothIcon,
   ArrowPathIcon,
-  ExclamationTriangleIcon,
-  ArchiveBoxIcon,
+  ArrowUturnLeftIcon,
+  BanknotesIcon,
+  DocumentTextIcon,
 } from '@heroicons/react/24/outline';
 
 const DashboardPage = () => {
@@ -35,7 +34,6 @@ const DashboardPage = () => {
     active_warehouses: 0,
     pending_deliveries: 0,
     total_deliveries: 0,
-    total_invoices: 0,
     low_stock_products: 0,
     out_of_stock_products: 0,
     total_stock_quantity: 0,
@@ -65,7 +63,6 @@ const DashboardPage = () => {
           active_warehouses: Number(response.data.active_warehouses) || 0,
           pending_deliveries: Number(response.data.pending_deliveries) || 0,
           total_deliveries: Number(response.data.total_deliveries) || 0,
-          total_invoices: Number(response.data.total_invoices) || 0,
           low_stock_products: Number(response.data.low_stock_products) || 0,
           out_of_stock_products: Number(response.data.out_of_stock_products) || 0,
           total_stock_quantity: Number(response.data.total_stock_quantity) || 0,
@@ -104,21 +101,21 @@ const DashboardPage = () => {
     navigate('/login');
   };
 
-  const formatNumber = (num) => {
-    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
-    if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
-    return num.toLocaleString();
-  };
+  // Utility functions (commented out - not currently used but kept for future use)
+  // const formatNumber = (num) => {
+  //   if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+  //   if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+  //   return num.toLocaleString();
+  // };
 
-  const formatCurrency = (num) => {
-    return '₨ ' + parseFloat(num || 0).toLocaleString('en-PK', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-  };
+  // const formatCurrency = (num) => {
+  //   return '₨ ' + parseFloat(num || 0).toLocaleString('en-PK', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  // };
 
   // Use ACTIVE counts to match what users see on management pages (which filter by is_active=true by default)
   const statsCards = [
     { name: 'Total Products', value: stats.active_products || stats.total_products, icon: TruckIcon, gradient: 'from-emerald-400 to-emerald-600', bgLight: 'bg-emerald-50', borderColor: 'border-emerald-200', link: '/products' },
     { name: 'Total Orders', value: stats.total_orders, icon: ShoppingBagIcon, gradient: 'from-violet-400 to-violet-600', bgLight: 'bg-violet-50', borderColor: 'border-violet-200', link: '/orders' },
-    { name: 'Total Invoices', value: stats.total_invoices, icon: DocumentTextIcon, gradient: 'from-cyan-400 to-cyan-600', bgLight: 'bg-cyan-50', borderColor: 'border-cyan-200', link: '/invoices' },
     { name: 'Total Deliveries', value: stats.total_deliveries || 0, icon: ClipboardDocumentListIcon, gradient: 'from-orange-400 to-orange-600', bgLight: 'bg-orange-50', borderColor: 'border-orange-200', link: '/deliveries' },
     { name: 'Total Shops', value: stats.active_shops || stats.total_shops, icon: HomeIcon, gradient: 'from-amber-400 to-amber-600', bgLight: 'bg-amber-50', borderColor: 'border-amber-200', link: '/shops' },
     { name: 'Total Salesmen', value: stats.active_salesmen || stats.total_salesmen, icon: UserGroupIcon, gradient: 'from-indigo-400 to-indigo-600', bgLight: 'bg-indigo-50', borderColor: 'border-indigo-200', link: '/salesmen' },
@@ -266,6 +263,42 @@ const DashboardPage = () => {
                 <div className="text-left">
                   <span className="font-bold text-gray-800 text-lg">Manage Routes</span>
                   <p className="text-xs text-gray-500">Configure delivery routes</p>
+                </div>
+              </button>
+              <button 
+                onClick={() => navigate('/stock-returns')}
+                className="group flex items-center justify-center px-6 py-5 bg-gradient-to-br from-amber-50 to-yellow-50 border-2 border-amber-200 rounded-2xl hover:from-amber-100 hover:to-yellow-100 hover:border-amber-400 hover:shadow-lg hover:shadow-amber-100 transition-all duration-300"
+              >
+                <div className="w-12 h-12 bg-gradient-to-br from-amber-400 to-yellow-500 rounded-xl flex items-center justify-center mr-4 shadow-lg group-hover:scale-110 transition-transform duration-300">
+                  <ArrowUturnLeftIcon className="h-6 w-6 text-white" />
+                </div>
+                <div className="text-left">
+                  <span className="font-bold text-gray-800 text-lg">Stock Returns</span>
+                  <p className="text-xs text-gray-500">Process delivery returns</p>
+                </div>
+              </button>
+              <button 
+                onClick={() => navigate('/daily-collections')}
+                className="group flex items-center justify-center px-6 py-5 bg-gradient-to-br from-teal-50 to-cyan-50 border-2 border-teal-200 rounded-2xl hover:from-teal-100 hover:to-cyan-100 hover:border-teal-400 hover:shadow-lg hover:shadow-teal-100 transition-all duration-300"
+              >
+                <div className="w-12 h-12 bg-gradient-to-br from-teal-400 to-cyan-500 rounded-xl flex items-center justify-center mr-4 shadow-lg group-hover:scale-110 transition-transform duration-300">
+                  <BanknotesIcon className="h-6 w-6 text-white" />
+                </div>
+                <div className="text-left">
+                  <span className="font-bold text-gray-800 text-lg">Daily Collections</span>
+                  <p className="text-xs text-gray-500">Track daily received amounts</p>
+                </div>
+              </button>
+              <button 
+                onClick={() => navigate('/routes/consolidated-bill')}
+                className="group flex items-center justify-center px-6 py-5 bg-gradient-to-br from-indigo-50 to-purple-50 border-2 border-indigo-200 rounded-2xl hover:from-indigo-100 hover:to-purple-100 hover:border-indigo-400 hover:shadow-lg hover:shadow-indigo-100 transition-all duration-300"
+              >
+                <div className="w-12 h-12 bg-gradient-to-br from-indigo-400 to-purple-500 rounded-xl flex items-center justify-center mr-4 shadow-lg group-hover:scale-110 transition-transform duration-300">
+                  <DocumentTextIcon className="h-6 w-6 text-white" />
+                </div>
+                <div className="text-left">
+                  <span className="font-bold text-gray-800 text-lg">Consolidated Bill</span>
+                  <p className="text-xs text-gray-500">Route-wise billing report</p>
                 </div>
               </button>
               {(user?.role === 'Admin' || user?.role_name === 'Admin') && (

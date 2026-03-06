@@ -30,28 +30,32 @@ export const resetApiBaseUrl = () => {
 };
 
 // Initialize base URL from DEFAULT_CONFIG (single source of truth)
-let initialBaseURL = getDefaultServerUrl();
-getApiBaseUrl().then(url => {
-  initialBaseURL = url;
-  api.defaults.baseURL = url;
-});
-
 const api = axios.create({
-  baseURL: initialBaseURL,
+  baseURL: getDefaultServerUrl(), // Start with default, update in interceptor
   timeout: 30000, // 30 second timeout for order sync (backend can be slow)
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
-// Update base URL before each request
+// Update cached URL in background (non-blocking)
+getApiBaseUrl().then(url => {
+  cachedBaseURL = url;
+  api.defaults.baseURL = url;
+  console.log('✅ [API] Server URL loaded:', url);
+}).catch(error => {
+  console.warn('⚠️ Could not load saved server config, using default:', error.message);
+});
+
+// Log requests for debugging
 api.interceptors.request.use(
-  async (config) => {
-    const baseURL = await getApiBaseUrl();
-    config.baseURL = baseURL;
+  (config) => {
+    const fullUrl = `${config.baseURL}${config.url}`;
+    console.log('🌐 [API] Request:', config.method?.toUpperCase(), fullUrl);
     return config;
   },
   (error) => {
+    console.error('❌ [API] Request setup error:', error.message);
     return Promise.reject(error);
   }
 );
@@ -74,6 +78,23 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
+    // Enhanced error logging
+    if (error.response) {
+      // Server responded with error status
+      console.error('❌ [API] Response error:', error.response.status, error.response.data);
+    } else if (error.request) {
+      // Request made but no response received
+      console.error('❌ [API] Network error - no response received');
+      console.error('❌ [API] Request config:', {
+        baseURL: error.config?.baseURL,
+        url: error.config?.url,
+        method: error.config?.method
+      });
+    } else {
+      // Error in request setup
+      console.error('❌ [API] Request setup error:', error.message);
+    }
+    
     if (error.response?.status === 401) {
       await AsyncStorage.removeItem('token');
       await AsyncStorage.removeItem('user');

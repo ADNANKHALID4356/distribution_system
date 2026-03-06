@@ -4,6 +4,56 @@
 const Delivery = require('../models/Delivery');
 
 /**
+ * GET /api/desktop/deliveries/available-orders
+ * Get approved/finalized orders available for delivery creation
+ */
+exports.getAvailableOrdersForDelivery = async (req, res) => {
+  try {
+    const db = require('../config/database');
+    
+    console.log('🔍 Fetching orders available for delivery...');
+    
+    // Get approved and finalized orders that don't have deliveries yet
+    // or have partial deliveries
+    const [orders] = await db.query(`
+      SELECT 
+        o.*,
+        s.full_name as salesman_name,
+        sh.shop_name,
+        r.route_name,
+        COUNT(DISTINCT od.id) as items_count,
+        COALESCE(
+          (SELECT COUNT(*) FROM deliveries d WHERE d.order_id = o.id),
+          0
+        ) as delivery_count
+      FROM orders o
+      LEFT JOIN salesmen s ON o.salesman_id = s.id
+      LEFT JOIN shops sh ON o.shop_id = sh.id
+      LEFT JOIN routes r ON o.route_id = r.id
+      LEFT JOIN ${process.env.USE_SQLITE === 'true' ? 'order_items' : 'order_details'} od ON o.id = od.order_id
+      WHERE o.status IN ('approved', 'finalized')
+      GROUP BY o.id
+      ORDER BY o.created_at DESC
+      LIMIT 100
+    `);
+
+    console.log(`✅ Found ${orders.length} orders available for delivery`);
+
+    res.json({
+      success: true,
+      data: orders
+    });
+  } catch (error) {
+    console.error('❌ Error in getAvailableOrdersForDelivery:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch available orders',
+      error: error.message
+    });
+  }
+};
+
+/**
  * GET /api/desktop/deliveries
  * Get all deliveries with filters
  */
@@ -96,6 +146,65 @@ exports.getDeliveryById = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch delivery',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * POST /api/desktop/deliveries/from-order
+ * Create new delivery challan directly from an ORDER (NEW FLOW - NO INVOICE)
+ */
+exports.createDeliveryFromOrder = async (req, res) => {
+  try {
+    const { orderId, delivery } = req.body;
+    const userId = req.user?.id;
+
+    console.log('\n🔵 ========== CREATE DELIVERY FROM ORDER REQUEST ==========');
+    console.log('📦 Order ID:', orderId);
+    console.log('📦 Delivery Data:', JSON.stringify(delivery, null, 2));
+    console.log('👤 User ID:', userId);
+
+    // Validation
+    if (!orderId) {
+      console.log('❌ Validation failed: No orderId');
+      return res.status(400).json({
+        success: false,
+        message: 'Order ID is required'
+      });
+    }
+
+    if (!delivery || !delivery.warehouse_id) {
+      console.log('❌ Validation failed: No warehouse_id');
+      return res.status(400).json({
+        success: false,
+        message: 'Warehouse is required'
+      });
+    }
+
+    if (!delivery.delivery_date) {
+      console.log('❌ Validation failed: No delivery_date');
+      return res.status(400).json({
+        success: false,
+        message: 'Delivery date is required'
+      });
+    }
+
+    console.log('✅ Validation passed, creating delivery from order...');
+    const newDelivery = await Delivery.createFromOrder(orderId, delivery, userId);
+    console.log('✅ Delivery created:', newDelivery.challan_number);
+    console.log('🔵 ========== CREATE DELIVERY FROM ORDER COMPLETE ==========\n');
+
+    res.status(201).json({
+      success: true,
+      message: 'Delivery challan created successfully from order',
+      data: newDelivery
+    });
+  } catch (error) {
+    console.error('❌ Error in createDeliveryFromOrder:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create delivery from order',
       error: error.message
     });
   }

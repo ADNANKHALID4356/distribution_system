@@ -70,13 +70,11 @@ const RouteManagementPage = () => {
   };
 
   const handleDelete = async (id, routeName) => {
-    if (window.confirm(`Are you sure you want to delete route "${routeName}"?`)) {
-      try {
-        await routeService.deleteRoute(id);
-        fetchRoutes();
-      } catch (err) {
-        setError(err.message || 'Failed to delete route');
-      }
+    try {
+      await routeService.deleteRoute(id);
+      fetchRoutes();
+    } catch (err) {
+      setError(err.message || 'Failed to delete route');
     }
   };
 

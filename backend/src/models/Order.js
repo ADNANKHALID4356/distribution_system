@@ -610,6 +610,11 @@ const Order = {
 
     const order = orders[0];
 
+    // Normalize SQLite order fields to match MySQL schema
+    if (useSQLite && order.discount_amount !== undefined) {
+      order.discount = order.discount_amount;
+    }
+
     // Get order details
     const [details] = await db.query(
       `SELECT 
@@ -624,7 +629,37 @@ const Order = {
       [id]
     );
 
-    order.items = details;
+    // Normalize SQLite items to match MySQL schema
+    if (useSQLite) {
+      order.items = details.map(item => {
+        // SQLite uses discount_percentage, calculate discount amount
+        const discount = item.total_price * ((item.discount_percentage || 0) / 100);
+        const net_price = item.total_price - discount;
+        
+        return {
+          ...item,
+          discount: discount,
+          discount_amount: discount,
+          net_price: net_price
+        };
+      });
+    } else {
+      // MySQL: Ensure all discount fields are present and normalized
+      order.items = details.map(item => {
+        // MySQL may have various discount field names - normalize them
+        const discount_amount = item.discount_amount || item.discount || 0;
+        const discount_percentage = item.discount_percentage || 0;
+        const net_price = item.net_price || (item.total_price - discount_amount);
+        
+        return {
+          ...item,
+          discount: discount_amount,
+          discount_amount: discount_amount,
+          discount_percentage: discount_percentage,
+          net_price: net_price
+        };
+      });
+    }
 
     return order;
   },
@@ -742,6 +777,56 @@ const Order = {
         items
       } = updateData;
 
+      // ================================================================
+      // STEP 1: RESTORE STOCK FOR OLD ORDER ITEMS
+      // ================================================================
+      if (items && Array.isArray(items)) {
+        console.log('🔄 [ORDER UPDATE] Restoring stock for old items...');
+        
+        // Get old order items before deletion
+        const [oldItems] = await connection.query(
+          `SELECT product_id, quantity FROM ${ORDER_DETAILS_TABLE} WHERE order_id = ?`,
+          [id]
+        );
+
+        // Get order's warehouse_id for warehouse stock updates
+        const [orderInfo] = await connection.query(
+          'SELECT warehouse_id FROM orders WHERE id = ?',
+          [id]
+        );
+        const warehouse_id = orderInfo && orderInfo.length > 0 ? orderInfo[0].warehouse_id : null;
+
+        // Restore stock for each old item
+        for (const oldItem of oldItems) {
+          console.log(`📦 [STOCK RESTORE] Restoring ${oldItem.quantity} units of product ${oldItem.product_id}`);
+          
+          // Restore global stock
+          await connection.query(
+            'UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?',
+            [oldItem.quantity, oldItem.product_id]
+          );
+          console.log(`✅ [STOCK RESTORE] Global stock restored for product ${oldItem.product_id}`);
+
+          // Restore warehouse stock if applicable
+          if (warehouse_id) {
+            const [warehouseStock] = await connection.query(
+              'SELECT id FROM warehouse_stock WHERE warehouse_id = ? AND product_id = ?',
+              [warehouse_id, oldItem.product_id]
+            );
+
+            if (warehouseStock && warehouseStock.length > 0) {
+              await connection.query(`
+                UPDATE warehouse_stock 
+                SET quantity = quantity + ?,
+                    last_updated = ${useSQLite ? "datetime('now')" : 'NOW()'}
+                WHERE warehouse_id = ? AND product_id = ?
+              `, [oldItem.quantity, warehouse_id, oldItem.product_id]);
+              console.log(`✅ [WAREHOUSE RESTORE] Warehouse stock restored for product ${oldItem.product_id}`);
+            }
+          }
+        }
+      }
+
       // Update order fields
       const fields = [];
       const values = [];
@@ -759,7 +844,9 @@ const Order = {
         values.push(total_amount);
       }
       if (discount !== undefined) {
-        fields.push('discount = ?');
+        // SQLite uses 'discount_amount', MySQL uses 'discount'
+        const discountColumn = useSQLite ? 'discount_amount' : 'discount';
+        fields.push(`${discountColumn} = ?`);
         values.push(discount);
       }
       if (net_amount !== undefined) {
@@ -776,7 +863,7 @@ const Order = {
       }
 
       if (fields.length > 0) {
-        fields.push('updated_at = NOW()');
+        fields.push(useSQLite ? "updated_at = datetime('now')" : 'updated_at = NOW()');
         values.push(id);
 
         await connection.query(
@@ -785,53 +872,241 @@ const Order = {
         );
       }
 
-      // Update items if provided
+      // ================================================================
+      // STEP 2: UPDATE ORDER ITEMS AND DEDUCT NEW STOCK
+      // ================================================================
       if (items && Array.isArray(items)) {
-        // Delete existing items
+        // Delete existing items (stock already restored above)
         await connection.query(`DELETE FROM ${ORDER_DETAILS_TABLE} WHERE order_id = ?`, [id]);
 
-        // Insert updated items
+        // Insert updated items and deduct stock
         if (items.length > 0) {
-          const itemValues = items.map(item => [
-            id,
-            item.product_id,
-            item.quantity,
-            item.unit_price,
-            item.discount || 0,
-            item.total_price,
-            item.net_price
-          ]);
-
-          await connection.query(
-            `INSERT INTO ${ORDER_DETAILS_TABLE} 
-             (order_id, product_id, quantity, unit_price, discount, total_price, net_price)
-             VALUES ?`,
-            [itemValues]
+          // Get order's warehouse_id for stock deduction
+          const [orderInfo] = await connection.query(
+            'SELECT warehouse_id FROM orders WHERE id = ?',
+            [id]
           );
+          const warehouse_id = orderInfo && orderInfo.length > 0 ? orderInfo[0].warehouse_id : null;
+
+          // Check stock availability for all new items first
+          console.log('🔍 [ORDER UPDATE] Checking stock availability for new items...');
+          for (const item of items) {
+            const [stockCheck] = await connection.query(
+              'SELECT stock_quantity, product_name FROM products WHERE id = ?',
+              [item.product_id]
+            );
+
+            if (!stockCheck || stockCheck.length === 0) {
+              throw new Error(`Product ID ${item.product_id} not found`);
+            }
+
+            const product = stockCheck[0];
+            const available = product.stock_quantity;
+
+            if (available < item.quantity) {
+              throw new Error(
+                `Insufficient stock for ${product.product_name}. ` +
+                `Available: ${available}, Required: ${item.quantity}`
+              );
+            }
+          }
+
+          // Deduct stock for new items
+          console.log('📦 [ORDER UPDATE] Deducting stock for new items...');
+          for (const item of items) {
+            const [stockCheck] = await connection.query(
+              'SELECT stock_quantity, product_name FROM products WHERE id = ?',
+              [item.product_id]
+            );
+            
+            const product = stockCheck[0];
+            const available = product.stock_quantity;
+
+            // Deduct from products table
+            console.log(`📦 [STOCK DEDUCT] Deducting ${item.quantity} units of ${product.product_name}`);
+            await connection.query(
+              'UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?',
+              [item.quantity, item.product_id]
+            );
+            console.log(`✅ [STOCK DEDUCT] Global stock updated: ${available} -> ${available - item.quantity}`);
+
+            // Deduct from warehouse stock if applicable
+            if (warehouse_id) {
+              const [warehouseStock] = await connection.query(
+                'SELECT id, quantity, reserved_quantity FROM warehouse_stock WHERE warehouse_id = ? AND product_id = ?',
+                [warehouse_id, item.product_id]
+              );
+
+              if (warehouseStock && warehouseStock.length > 0) {
+                const wsRecord = warehouseStock[0];
+                const wsAvailable = wsRecord.quantity - (wsRecord.reserved_quantity || 0);
+
+                if (wsAvailable >= item.quantity) {
+                  await connection.query(`
+                    UPDATE warehouse_stock 
+                    SET quantity = quantity - ?,
+                        last_updated = ${useSQLite ? "datetime('now')" : 'NOW()'}
+                    WHERE warehouse_id = ? AND product_id = ?
+                  `, [item.quantity, warehouse_id, item.product_id]);
+                  console.log(`✅ [WAREHOUSE DEDUCT] Warehouse stock updated for product ${item.product_id}`);
+                } else {
+                  console.log(`⚠️ [WAREHOUSE] Insufficient warehouse stock, but global stock OK`);
+                }
+              }
+            }
+          }
+
+          // Insert new order items
+          if (useSQLite) {
+            // SQLite: Individual inserts with discount_percentage (no net_price column)
+            console.log('🔍 [ORDER UPDATE] Using SQLite - inserting items individually');
+            for (const item of items) {
+              // Calculate discount_percentage from discount amount
+              const discount_percentage = item.discount && item.total_price > 0 
+                ? (item.discount / item.total_price) * 100 
+                : 0;
+              
+              await connection.query(
+                `INSERT INTO ${ORDER_DETAILS_TABLE} 
+                 (order_id, product_id, quantity, unit_price, total_price, discount_percentage)
+                 VALUES (?, ?, ?, ?, ?, ?)`,
+                [id, item.product_id, item.quantity, item.unit_price, item.total_price, discount_percentage]
+              );
+            }
+            console.log('✅ [ORDER UPDATE] New order items inserted (SQLite)');
+          } else {
+            // MySQL: Batch insert with discount and net_price
+            console.log('🔍 [ORDER UPDATE] Using MySQL - batch inserting items');
+            const itemValues = items.map(item => [
+              id,
+              item.product_id,
+              item.quantity,
+              item.unit_price,
+              item.discount || 0,
+              item.total_price,
+              item.net_price
+            ]);
+
+            await connection.query(
+              `INSERT INTO ${ORDER_DETAILS_TABLE} 
+               (order_id, product_id, quantity, unit_price, discount, total_price, net_price)
+               VALUES ?`,
+              [itemValues]
+            );
+            console.log('✅ [ORDER UPDATE] New order items inserted (MySQL)');
+          }
         }
       }
 
       await connection.commit();
       connection.release();
 
+      console.log('✅ [ORDER UPDATE] Order updated with stock adjustments');
       return await this.findById(id);
     } catch (error) {
       await connection.rollback();
       connection.release();
+      console.error('❌ [ORDER UPDATE] Failed:', error.message);
       throw error;
     }
   },
 
   /**
-   * Delete order (soft delete by changing status)
+   * Delete order (with stock restoration for placed orders)
    */
   async delete(id) {
-    const [result] = await db.query(
-      `DELETE FROM orders WHERE id = ?`,
-      [id]
-    );
+    const connection = await db.getConnection();
+    
+    try {
+      await connection.beginTransaction();
 
-    return result.affectedRows > 0;
+      // Get order details including items before deletion
+      const [orders] = await connection.query(
+        'SELECT status, warehouse_id FROM orders WHERE id = ?',
+        [id]
+      );
+
+      if (orders.length === 0) {
+        await connection.rollback();
+        connection.release();
+        return false;
+      }
+
+      const order = orders[0];
+      const warehouse_id = order.warehouse_id;
+
+      // If order was placed, restore stock
+      if (order.status === 'placed') {
+        console.log('🔄 [ORDER DELETE] Restoring stock for placed order...');
+        
+        // Get order items
+        const [items] = await connection.query(
+          `SELECT product_id, quantity FROM ${ORDER_DETAILS_TABLE} WHERE order_id = ?`,
+          [id]
+        );
+
+        // Restore stock for each item
+        for (const item of items) {
+          console.log(`📦 [STOCK RESTORE] Restoring ${item.quantity} units of product ${item.product_id}`);
+          
+          // Restore global stock
+          await connection.query(
+            'UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?',
+            [item.quantity, item.product_id]
+          );
+          console.log(`✅ [STOCK RESTORE] Global stock restored for product ${item.product_id}`);
+
+          // Restore warehouse stock if applicable
+          if (warehouse_id) {
+            const [warehouseStock] = await connection.query(
+              'SELECT id FROM warehouse_stock WHERE warehouse_id = ? AND product_id = ?',
+              [warehouse_id, item.product_id]
+            );
+
+            if (warehouseStock && warehouseStock.length > 0) {
+              await connection.query(`
+                UPDATE warehouse_stock 
+                SET quantity = quantity + ?,
+                    last_updated = ${useSQLite ? "datetime('now')" : 'NOW()'}
+                WHERE warehouse_id = ? AND product_id = ?
+              `, [item.quantity, warehouse_id, item.product_id]);
+              console.log(`✅ [WAREHOUSE RESTORE] Warehouse stock restored for product ${item.product_id}`);
+            }
+          }
+        }
+      }
+
+      // Clear order_id reference in deliveries (preserve delivery records)
+      await connection.query(
+        `UPDATE deliveries SET order_id = NULL WHERE order_id = ?`,
+        [id]
+      );
+      console.log('✅ [ORDER DELETE] Order reference cleared from deliveries');
+
+      // Delete order items first (required for SQLite foreign key constraints)
+      await connection.query(
+        `DELETE FROM ${ORDER_DETAILS_TABLE} WHERE order_id = ?`,
+        [id]
+      );
+      console.log('✅ [ORDER DELETE] Order items deleted');
+
+      // Delete order
+      const [result] = await connection.query(
+        `DELETE FROM orders WHERE id = ?`,
+        [id]
+      );
+
+      await connection.commit();
+      connection.release();
+
+      console.log('✅ [ORDER DELETE] Order deleted with stock restoration');
+      return result.affectedRows > 0;
+    } catch (error) {
+      await connection.rollback();
+      connection.release();
+      console.error('❌ [ORDER DELETE] Failed:', error.message);
+      throw error;
+    }
   },
 
   /**

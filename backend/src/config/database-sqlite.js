@@ -53,6 +53,146 @@ function safeAddColumn(tableName, columnName, columnDef) {
   return false;
 }
 
+// Migrate new feature tables (stock returns, daily collections, company_name)
+function migrateNewFeatures() {
+  console.log('🔄 Checking new feature tables...');
+
+  // Add company_name column to products if missing
+  try {
+    const productCols = db.pragma('table_info(products)');
+    const hasCompanyName = productCols.some(c => c.name === 'company_name');
+    if (!hasCompanyName) {
+      db.exec("ALTER TABLE products ADD COLUMN company_name TEXT DEFAULT NULL");
+      console.log('   ✅ Added company_name to products');
+    }
+  } catch (e) { console.log('   ⚠️ products.company_name:', e.message); }
+
+  // Create stock_returns table (drop old schema if columns mismatch)
+  try {
+    const srCols = db.pragma('table_info(stock_returns)');
+    const hasChallan = srCols.some(c => c.name === 'challan_number');
+    if (srCols.length > 0 && !hasChallan) {
+      db.exec('DROP TABLE IF EXISTS stock_returns');
+      console.log('   🔄 Recreating stock_returns with full schema');
+    }
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS stock_returns (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        return_number TEXT UNIQUE NOT NULL,
+        delivery_id INTEGER NOT NULL,
+        challan_number TEXT,
+        shop_id INTEGER,
+        shop_name TEXT,
+        route_id INTEGER,
+        route_name TEXT,
+        salesman_id INTEGER,
+        salesman_name TEXT,
+        warehouse_id INTEGER,
+        return_date DATETIME DEFAULT (datetime('now')),
+        total_items INTEGER DEFAULT 0,
+        total_quantity_returned INTEGER DEFAULT 0,
+        total_return_amount REAL DEFAULT 0,
+        reason TEXT,
+        notes TEXT,
+        status TEXT DEFAULT 'completed',
+        created_by INTEGER,
+        created_by_name TEXT,
+        created_at DATETIME DEFAULT (datetime('now')),
+        updated_at DATETIME DEFAULT (datetime('now'))
+      )
+    `);
+    console.log('   ✅ stock_returns table ready');
+  } catch (e) { console.log('   ⚠️ stock_returns:', e.message); }
+
+  // Create stock_return_items table (drop old schema if columns mismatch)
+  try {
+    const sriCols = db.pragma('table_info(stock_return_items)');
+    const hasReturnId = sriCols.some(c => c.name === 'return_id');
+    if (sriCols.length > 0 && !hasReturnId) {
+      db.exec('DROP TABLE IF EXISTS stock_return_items');
+      console.log('   🔄 Recreating stock_return_items with full schema');
+    }
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS stock_return_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        return_id INTEGER NOT NULL,
+        delivery_item_id INTEGER NOT NULL,
+        product_id INTEGER NOT NULL,
+        product_name TEXT,
+        product_code TEXT,
+        quantity_delivered INTEGER DEFAULT 0,
+        quantity_returned INTEGER NOT NULL,
+        unit_price REAL DEFAULT 0,
+        return_amount REAL DEFAULT 0,
+        reason TEXT,
+        condition_status TEXT DEFAULT 'good',
+        notes TEXT,
+        created_at DATETIME DEFAULT (datetime('now'))
+      )
+    `);
+    console.log('   ✅ stock_return_items table ready');
+  } catch (e) { console.log('   ⚠️ stock_return_items:', e.message); }
+
+  // Create daily_collections table (drop old schema if columns mismatch)
+  try {
+    const dcCols = db.pragma('table_info(daily_collections)');
+    const hasShopId = dcCols.some(c => c.name === 'shop_id');
+    if (dcCols.length > 0 && !hasShopId) {
+      db.exec('DROP TABLE IF EXISTS daily_collections');
+      console.log('   🔄 Recreating daily_collections with full schema');
+    }
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS daily_collections (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        collection_date DATE DEFAULT (date('now')),
+        shop_id INTEGER,
+        shop_name TEXT,
+        salesman_id INTEGER,
+        salesman_name TEXT,
+        amount REAL NOT NULL,
+        payment_method TEXT DEFAULT 'cash',
+        reference_number TEXT,
+        description TEXT,
+        notes TEXT,
+        created_by INTEGER,
+        created_by_name TEXT,
+        created_at DATETIME DEFAULT (datetime('now')),
+        updated_at DATETIME DEFAULT (datetime('now'))
+      )
+    `);
+    console.log('   ✅ daily_collections table ready');
+  } catch (e) { console.log('   ⚠️ daily_collections:', e.message); }
+
+  // Ensure discount columns exist in order_details
+  try {
+    const orderDetailCols = db.pragma('table_info(order_details)');
+    if (orderDetailCols.length > 0) {
+      const hasDiscPct = orderDetailCols.some(c => c.name === 'discount_percentage');
+      const hasDiscAmt = orderDetailCols.some(c => c.name === 'discount_amount');
+      if (!hasDiscPct) {
+        db.exec("ALTER TABLE order_details ADD COLUMN discount_percentage REAL DEFAULT 0");
+      }
+      if (!hasDiscAmt) {
+        db.exec("ALTER TABLE order_details ADD COLUMN discount_amount REAL DEFAULT 0");
+      }
+    }
+  } catch (e) { console.log('   ⚠️ order_details discount:', e.message); }
+
+  // Ensure quantity_returned column on delivery_items
+  try {
+    const diCols = db.pragma('table_info(delivery_items)');
+    if (diCols.length > 0) {
+      const hasQtyReturned = diCols.some(c => c.name === 'quantity_returned');
+      if (!hasQtyReturned) {
+        db.exec("ALTER TABLE delivery_items ADD COLUMN quantity_returned REAL DEFAULT 0");
+        console.log('   ✅ Added quantity_returned to delivery_items');
+      }
+    }
+  } catch (e) { console.log('   ⚠️ delivery_items.quantity_returned:', e.message); }
+
+  console.log('✅ New feature migration complete');
+}
+
 // Migrate deliveries table to add missing columns for professional challan management
 function migrateDeliveriesTable() {
   console.log('🔄 Checking deliveries table schema...');
@@ -260,6 +400,30 @@ function migrateDeliveriesTable() {
     console.log(`✅ Deliveries schema migration complete - added ${columnsAdded} columns`);
   } else {
     console.log('✅ Deliveries schema is up to date');
+  }
+}
+
+// Migrate orders table to add delivery tracking columns (NEW)
+function migrateOrdersTable() {
+  console.log('🔄 Checking orders table schema for delivery tracking...');
+  
+  const orderColumns = [
+    ['route_id', 'INTEGER'],
+    ['delivery_status', 'TEXT DEFAULT \'pending\' CHECK(delivery_status IN (\'pending\', \'partial\', \'delivered\'))'],
+    ['delivery_generated', 'INTEGER DEFAULT 0']
+  ];
+  
+  let columnsAdded = 0;
+  for (const [colName, colDef] of orderColumns) {
+    if (safeAddColumn('orders', colName, colDef)) {
+      columnsAdded++;
+    }
+  }
+  
+  if (columnsAdded > 0) {
+    console.log(`✅ Orders delivery tracking migration complete - added ${columnsAdded} columns`);
+  } else {
+    console.log('✅ Orders table already has delivery tracking columns');
   }
 }
 
@@ -555,17 +719,21 @@ function initializeDatabase() {
       shop_id INTEGER NOT NULL,
       salesman_id INTEGER NOT NULL,
       warehouse_id INTEGER,
+      route_id INTEGER,
       order_date DATETIME DEFAULT CURRENT_TIMESTAMP,
       total_amount REAL DEFAULT 0,
       discount_amount REAL DEFAULT 0,
       net_amount REAL DEFAULT 0,
-      status TEXT DEFAULT 'placed' CHECK(status IN ('placed', 'approved', 'rejected', 'delivered')),
+      status TEXT DEFAULT 'placed' CHECK(status IN ('placed', 'approved', 'finalized', 'rejected', 'delivered')),
       notes TEXT,
+      delivery_status TEXT DEFAULT 'pending' CHECK(delivery_status IN ('pending', 'partial', 'delivered')),
+      delivery_generated INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE,
       FOREIGN KEY (salesman_id) REFERENCES users(id),
-      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id)
+      FOREIGN KEY (warehouse_id) REFERENCES warehouses(id),
+      FOREIGN KEY (route_id) REFERENCES routes(id)
     )
   `);
 
@@ -778,6 +946,27 @@ function initializeDatabase() {
     )
   `);
 
+  // Salesman Ledger table (for salary/payment records)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS salesman_ledger (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      salesman_id INTEGER NOT NULL,
+      salesman_name TEXT,
+      transaction_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+      transaction_type TEXT CHECK(transaction_type IN ('salary', 'advance', 'deduction', 'commission', 'adjustment')) DEFAULT 'salary',
+      amount REAL NOT NULL,
+      payment_method TEXT DEFAULT 'cash' CHECK(payment_method IN ('cash', 'bank_transfer', 'cheque', 'online')),
+      reference_number TEXT,
+      description TEXT,
+      notes TEXT,
+      created_by INTEGER,
+      created_by_name TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (salesman_id) REFERENCES salesmen(id) ON DELETE CASCADE,
+      FOREIGN KEY (created_by) REFERENCES users(id)
+    )
+  `);
+
   // Company Settings table
   db.exec(`
     CREATE TABLE IF NOT EXISTS company_settings (
@@ -858,6 +1047,10 @@ function initializeDatabase() {
   // This handles existing databases that need schema updates
   migrateDeliveriesTable();
   migrateWarehousesTable();
+  migrateOrdersTable(); // NEW: Add delivery tracking columns
+
+  // MIGRATION: New feature tables and columns
+  migrateNewFeatures();
 
   // Check if admin user exists, if not create default admin
   const adminExists = db.prepare('SELECT COUNT(*) as count FROM users WHERE role_id = ?').get(1);

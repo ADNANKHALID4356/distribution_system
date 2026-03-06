@@ -294,6 +294,9 @@ CREATE TABLE orders (
   net_amount DECIMAL(15,2) DEFAULT 0,
   status ENUM('draft', 'placed', 'approved', 'finalized', 'rejected', 'delivered') DEFAULT 'placed',
   notes TEXT,
+  -- Delivery tracking columns (NEW - replaces invoice tracking)
+  delivery_status ENUM('pending', 'partial', 'delivered') DEFAULT 'pending',
+  delivery_generated TINYINT(1) DEFAULT 0,
   -- Sync columns for mobile
   is_synced TINYINT(1) DEFAULT 0,
   sync_status ENUM('pending', 'synced', 'failed') DEFAULT 'pending',
@@ -314,7 +317,8 @@ CREATE TABLE orders (
   INDEX idx_status (status),
   INDEX idx_order_date (order_date),
   INDEX idx_is_synced (is_synced),
-  INDEX idx_mobile_order_id (mobile_order_id)
+  INDEX idx_mobile_order_id (mobile_order_id),
+  INDEX idx_delivery_status (delivery_status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Order Details Table (MySQL naming convention)

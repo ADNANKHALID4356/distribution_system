@@ -19,11 +19,16 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import productService from '../../services/productService';
+import { useAuth } from '../../context/AuthContext';
 
 const ProductDetailScreen = ({ route, navigation }) => {
   const { productId } = route.params;
+  const { user } = useAuth();
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
+  
+  // Check if user is salesman (role_id = 3)
+  const isSalesman = user?.role_id === 3;
 
   useEffect(() => {
     loadProduct();
@@ -103,22 +108,28 @@ const ProductDetailScreen = ({ route, navigation }) => {
             <Text style={styles.priceLabel}>Unit Price</Text>
             <Text style={styles.priceValue}>{formatted.formattedPrice}</Text>
           </View>
-          <View style={styles.priceItem}>
-            <Text style={styles.priceLabel}>Carton Price</Text>
-            <Text style={styles.priceValue}>{formatted.formattedCartonPrice}</Text>
-          </View>
-          <View style={styles.priceItem}>
-            <Text style={styles.priceLabel}>Purchase Price</Text>
-            <Text style={styles.priceValue}>
-              Rs. {parseFloat(product.purchase_price || 0).toFixed(2)}
-            </Text>
-          </View>
-          <View style={styles.priceItem}>
-            <Text style={styles.priceLabel}>Profit Margin</Text>
-            <Text style={styles.priceValue}>
-              {product.profit_margin || 0}%
-            </Text>
-          </View>
+          {!isSalesman && (
+            <View style={styles.priceItem}>
+              <Text style={styles.priceLabel}>Carton Price</Text>
+              <Text style={styles.priceValue}>{formatted.formattedCartonPrice}</Text>
+            </View>
+          )}
+          {!isSalesman && (
+            <View style={styles.priceItem}>
+              <Text style={styles.priceLabel}>Purchase Price</Text>
+              <Text style={styles.priceValue}>
+                Rs. {parseFloat(product.purchase_price || 0).toFixed(2)}
+              </Text>
+            </View>
+          )}
+          {!isSalesman && (
+            <View style={styles.priceItem}>
+              <Text style={styles.priceLabel}>Profit Margin</Text>
+              <Text style={styles.priceValue}>
+                {product.profit_margin || 0}%
+              </Text>
+            </View>
+          )}
         </View>
       </View>
 

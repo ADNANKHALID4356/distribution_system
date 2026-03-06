@@ -857,6 +857,15 @@ class DatabaseHelper {
     try {
       const orderNumber = await this.generateOrderNumber();
       
+      // Get local date in YYYY-MM-DD format
+      const localDate = orderData.order_date || (() => {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      })();
+      
       const query = `
         INSERT INTO orders (
           order_number, salesman_id, salesman_name, shop_id, shop_name,
@@ -873,7 +882,7 @@ class DatabaseHelper {
         orderData.shop_name || '',
         orderData.route_id || null,
         orderData.route_name || '',
-        orderData.order_date || new Date().toISOString(),
+        localDate,
         orderData.status || 'draft',
         orderData.subtotal || 0,
         orderData.discount_amount || 0,

@@ -8,6 +8,7 @@ function SalesmanListingPage() {
   const [salesmen, setSalesmen] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [success, setSuccess] = useState('');
   const [stats, setStats] = useState({ total: 0, active: 0, cities: 0 });
   
   // Filters and pagination
@@ -43,6 +44,24 @@ function SalesmanListingPage() {
     showResult: false,
     resultUsername: '',
     resultPassword: ''
+  });
+
+  // Salary Ledger modal state
+  const [ledgerModal, setLedgerModal] = useState({
+    show: false,
+    salesmanId: null,
+    salesmanName: '',
+    showForm: false,
+    ledgerHistory: [],
+    ledgerSummary: null,
+    loading: false,
+    amount: '',
+    transactionType: 'salary',
+    paymentMethod: 'cash',
+    referenceNumber: '',
+    description: '',
+    notes: '',
+    transactionDate: new Date().toISOString().split('T')[0]
   });
 
   useEffect(() => {
@@ -95,14 +114,12 @@ function SalesmanListingPage() {
   const handleDelete = async (id, name, isActive) => {
     if (isActive === 1) {
       // First click: Soft delete (mark as inactive)
-      if (window.confirm(`Mark "${name}" as inactive?\n\nClick delete again on inactive salesman to permanently remove from database.`)) {
-        try {
-          await salesmanService.deleteSalesman(id);
-          fetchSalesmen();
-        } catch (err) {
-          setError('Failed to deactivate salesman');
-          console.error('Delete error:', err);
-        }
+      try {
+        await salesmanService.deleteSalesman(id);
+        fetchSalesmen();
+      } catch (err) {
+        setError('Failed to deactivate salesman');
+        console.error('Delete error:', err);
       }
     } else {
       // Second click: Show permanent delete confirmation
@@ -119,7 +136,8 @@ function SalesmanListingPage() {
   const confirmPermanentDelete = async () => {
     try {
       await salesmanService.permanentDeleteSalesman(deleteModal.id);
-      alert(`✓ "${deleteModal.name}" has been permanently deleted from the database.`);
+      setSuccess(`✓ "${deleteModal.name}" has been permanently deleted from the database.`);
+      setTimeout(() => setSuccess(''), 5000);
       setDeleteModal({ show: false, id: null, name: '', isPermanent: false });
       
       // Reset to page 1 if current page becomes empty
@@ -153,7 +171,8 @@ function SalesmanListingPage() {
         salesmanName: name
       });
     } catch (err) {
-      alert('Failed to retrieve credentials: ' + (err.message || 'Unknown error'));
+      setError('Failed to retrieve credentials: ' + (err.message || 'Unknown error'));
+      setTimeout(() => setError(''), 5000);
       console.error('Get credentials error:', err);
     }
   };
@@ -173,7 +192,8 @@ function SalesmanListingPage() {
   const copyToClipboard = (text, label) => {
     // Check if text is valid
     if (!text || text.trim() === '') {
-      alert(`❌ No ${label} to copy`);
+      setError(`❌ No ${label} to copy`);
+      setTimeout(() => setError(''), 3000);
       return;
     }
 
@@ -181,7 +201,8 @@ function SalesmanListingPage() {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text)
         .then(() => {
-          alert(`✓ ${label} copied to clipboard!`);
+          setSuccess(`✓ ${label} copied to clipboard!`);
+          setTimeout(() => setSuccess(''), 3000);
         })
         .catch((err) => {
           console.error('Clipboard API failed:', err);
@@ -208,13 +229,16 @@ function SalesmanListingPage() {
     try {
       const successful = document.execCommand('copy');
       if (successful) {
-        alert(`✓ ${label} copied to clipboard!`);
+        setSuccess(`✓ ${label} copied to clipboard!`);
+        setTimeout(() => setSuccess(''), 3000);
       } else {
-        alert(`❌ Failed to copy ${label}. Please copy manually.`);
+        setError(`❌ Failed to copy ${label}. Please copy manually.`);
+        setTimeout(() => setError(''), 3000);
       }
     } catch (err) {
       console.error('Fallback copy failed:', err);
-      alert(`❌ Copy failed. Please select and copy manually: ${text}`);
+      setError(`❌ Copy failed. Please select and copy manually: ${text}`);
+      setTimeout(() => setError(''), 5000);
     }
     
     document.body.removeChild(textarea);
@@ -246,7 +270,8 @@ function SalesmanListingPage() {
   // Submit password reset
   const submitPasswordReset = async () => {
     if (!resetPasswordModal.newPassword || resetPasswordModal.newPassword.length < 6) {
-      alert('Password must be at least 6 characters long');
+      setError('Password must be at least 6 characters long');
+      setTimeout(() => setError(''), 5000);
       return;
     }
 
@@ -264,7 +289,8 @@ function SalesmanListingPage() {
         resultPassword: data.new_password || data.password || ''
       }));
     } catch (err) {
-      alert('Failed to reset password: ' + (err.message || 'Unknown error'));
+      setError('Failed to reset password: ' + (err.message || 'Unknown error'));
+      setTimeout(() => setError(''), 5000);
       console.error('Reset password error:', err);
     }
   };
@@ -297,6 +323,119 @@ function SalesmanListingPage() {
 
   const handleViewRoutes = (id) => {
     navigate(`/salesmen/${id}/routes`);
+  };
+
+  // Handle salary ledger
+  const handleOpenLedger = async (id, name) => {
+    setLedgerModal({
+      show: true,
+      salesmanId: id,
+      salesmanName: name,
+      showForm: false,
+      ledgerHistory: [],
+      ledgerSummary: null,
+      loading: true,
+      amount: '',
+      transactionType: 'salary',
+      paymentMethod: 'cash',
+      referenceNumber: '',
+      description: '',
+      notes: '',
+      transactionDate: new Date().toISOString().split('T')[0]
+    });
+
+    // Fetch ledger history
+    try {
+      const [historyResponse, summaryResponse] = await Promise.all([
+        salesmanService.getSalesmanLedger(id),
+        salesmanService.getSalarySummary(id)
+      ]);
+
+      setLedgerModal(prev => ({
+        ...prev,
+        ledgerHistory: historyResponse.data || [],
+        ledgerSummary: summaryResponse.data || null,
+        loading: false
+      }));
+    } catch (err) {
+      console.error('Failed to fetch ledger:', err);
+      setLedgerModal(prev => ({ ...prev, loading: false }));
+    }
+  };
+
+  const handleSaveSalary = async () => {
+    try {
+      const { salesmanId, amount, transactionType, paymentMethod, referenceNumber, description, notes, transactionDate } = ledgerModal;
+      
+      if (!amount || parseFloat(amount) <= 0) {
+        setError('Please enter a valid amount');
+        setTimeout(() => setError(''), 5000);
+        return;
+      }
+
+      const response = await salesmanService.createLedgerEntry({
+        salesman_id: salesmanId,
+        amount: parseFloat(amount),
+        transaction_type: transactionType,
+        payment_method: paymentMethod,
+        reference_number: referenceNumber,
+        description: description,
+        notes: notes,
+        transaction_date: transactionDate
+      });
+
+      if (response.success) {
+        setSuccess('Salary record added successfully!');
+        setTimeout(() => setSuccess(''), 5000);
+        // Refresh ledger history
+        const [historyResponse, summaryResponse] = await Promise.all([
+          salesmanService.getSalesmanLedger(salesmanId),
+          salesmanService.getSalarySummary(salesmanId)
+        ]);
+        
+        setLedgerModal(prev => ({
+          ...prev,
+          showForm: false,
+          ledgerHistory: historyResponse.data || [],
+          ledgerSummary: summaryResponse.data || null,
+          amount: '',
+          transactionType: 'salary',
+          paymentMethod: 'cash',
+          referenceNumber: '',
+          description: '',
+          notes: '',
+          transactionDate: new Date().toISOString().split('T')[0]
+        }));
+      }
+    } catch (err) {
+      setError('Failed to add salary record: ' + (err.message || 'Unknown error'));
+      setTimeout(() => setError(''), 5000);
+      console.error('Add salary error:', err);
+    }
+  };
+
+  const handleDeleteLedgerEntry = async (entryId) => {
+    try {
+      await salesmanService.deleteLedgerEntry(entryId);
+      setSuccess('Entry deleted successfully!');
+      setTimeout(() => setSuccess(''), 5000);
+      
+      // Refresh ledger history
+      const [historyResponse, summaryResponse] = await Promise.all([
+        salesmanService.getSalesmanLedger(ledgerModal.salesmanId),
+        salesmanService.getSalarySummary(ledgerModal.salesmanId)
+      ]);
+      
+      setLedgerModal(prev => ({
+        ...prev,
+        ledgerHistory: historyResponse.data || [],
+        ledgerSummary: summaryResponse.data || null
+      }));
+    } catch (err) {
+      setError('Failed to delete entry: ' + (err.message || 'Unknown error'));
+      setTimeout(() => setError(''), 5000);
+      console.error('Delete error:', err);
+    }
   };
 
   // Pagination handlers
@@ -367,6 +506,22 @@ function SalesmanListingPage() {
           + Add New Salesman
         </button>
       </div>
+
+      {/* Error Alert */}
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 flex justify-between items-center">
+          <span>{error}</span>
+          <button onClick={() => setError('')} className="text-red-700 hover:text-red-900 font-bold">&times;</button>
+        </div>
+      )}
+
+      {/* Success Alert */}
+      {success && (
+        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4 flex justify-between items-center">
+          <span>{success}</span>
+          <button onClick={() => setSuccess('')} className="text-green-700 hover:text-green-900 font-bold">&times;</button>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="filters-section">
@@ -478,6 +633,13 @@ function SalesmanListingPage() {
                           title="Routes"
                         >
                           🗺️ Routes
+                        </button>
+                        <button 
+                          className="action-btn btn-ledger" 
+                          onClick={() => handleOpenLedger(salesman.id, salesman.full_name)}
+                          title="Salary Ledger"
+                        >
+                          📊 Ledger
                         </button>
                         <button 
                           className="action-btn btn-credentials" 
@@ -815,6 +977,239 @@ function SalesmanListingPage() {
                 </button>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Salary Ledger Modal */}
+      {ledgerModal.show && (
+        <div className="modal-overlay" onClick={() => setLedgerModal({ ...ledgerModal, show: false })}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: ledgerModal.showForm ? '600px' : '900px', maxHeight: '90vh', overflow: 'auto' }}>
+            <div className="modal-header">
+              <h2>💰 {ledgerModal.showForm ? 'Add New Entry' : 'Salary Ledger'}: {ledgerModal.salesmanName}</h2>
+              <button className="modal-close" onClick={() => setLedgerModal({ ...ledgerModal, show: false })}>×</button>
+            </div>
+            
+            {ledgerModal.loading ? (
+              <div className="modal-body" style={{ textAlign: 'center', padding: '40px' }}>
+                <p>Loading ledger...</p>
+              </div>
+            ) : ledgerModal.showForm ? (
+              // Form View
+              <>
+                <div className="modal-body">
+                  <div className="form-group">
+                    <label>Transaction Type *</label>
+                    <select 
+                      value={ledgerModal.transactionType}
+                      onChange={(e) => setLedgerModal({ ...ledgerModal, transactionType: e.target.value })}
+                      style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '4px' }}
+                    >
+                      <option value="salary">Salary</option>
+                      <option value="advance">Advance</option>
+                      <option value="commission">Commission</option>
+                      <option value="deduction">Deduction</option>
+                      <option value="adjustment">Adjustment</option>
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label>Amount (PKR) *</label>
+                    <input 
+                      type="number"
+                      value={ledgerModal.amount}
+                      onChange={(e) => setLedgerModal({ ...ledgerModal, amount: e.target.value })}
+                      placeholder="Enter amount"
+                      min="0"
+                      step="0.01"
+                      style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '4px' }}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Transaction Date *</label>
+                    <input 
+                      type="date"
+                      value={ledgerModal.transactionDate}
+                      onChange={(e) => setLedgerModal({ ...ledgerModal, transactionDate: e.target.value })}
+                      style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '4px' }}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Payment Method</label>
+                    <select 
+                      value={ledgerModal.paymentMethod}
+                      onChange={(e) => setLedgerModal({ ...ledgerModal, paymentMethod: e.target.value })}
+                      style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '4px' }}
+                    >
+                      <option value="cash">Cash</option>
+                      <option value="bank_transfer">Bank Transfer</option>
+                      <option value="cheque">Cheque</option>
+                      <option value="online">Online Payment</option>
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label>Reference Number</label>
+                    <input 
+                      type="text"
+                      value={ledgerModal.referenceNumber}
+                      onChange={(e) => setLedgerModal({ ...ledgerModal, referenceNumber: e.target.value })}
+                      placeholder="e.g., Cheque #, Transaction ID"
+                      style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '4px' }}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Description</label>
+                    <input 
+                      type="text"
+                      value={ledgerModal.description}
+                      onChange={(e) => setLedgerModal({ ...ledgerModal, description: e.target.value })}
+                      placeholder="e.g., Monthly Salary - January 2026"
+                      style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '4px' }}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Notes</label>
+                    <textarea 
+                      value={ledgerModal.notes}
+                      onChange={(e) => setLedgerModal({ ...ledgerModal, notes: e.target.value })}
+                      placeholder="Additional notes (optional)"
+                      rows="3"
+                      style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '4px', resize: 'vertical' }}
+                    />
+                  </div>
+                </div>
+                <div className="modal-actions">
+                  <button className="modal-btn btn-cancel" onClick={() => setLedgerModal({ ...ledgerModal, showForm: false })}>
+                    ← Back to History
+                  </button>
+                  <button className="modal-btn btn-confirm" onClick={handleSaveSalary}>
+                    💾 Save Entry
+                  </button>
+                </div>
+              </>
+            ) : (
+              // History View
+              <>
+                <div className="modal-body" style={{ padding: '20px' }}>
+                  {/* Summary Cards */}
+                  {ledgerModal.ledgerSummary && (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px', marginBottom: '20px' }}>
+                      <div style={{ background: '#e0f2fe', padding: '15px', borderRadius: '8px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '12px', color: '#0369a1', marginBottom: '5px' }}>Total Salary</div>
+                        <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#0c4a6e' }}>Rs. {(ledgerModal.ledgerSummary.total_salary || 0).toLocaleString()}</div>
+                      </div>
+                      <div style={{ background: '#fef3c7', padding: '15px', borderRadius: '8px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '5px' }}>Advances</div>
+                        <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#78350f' }}>Rs. {(ledgerModal.ledgerSummary.total_advance || 0).toLocaleString()}</div>
+                      </div>
+                      <div style={{ background: '#d1fae5', padding: '15px', borderRadius: '8px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '12px', color: '#065f46', marginBottom: '5px' }}>Commissions</div>
+                        <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#064e3b' }}>Rs. {(ledgerModal.ledgerSummary.total_commission || 0).toLocaleString()}</div>
+                      </div>
+                      <div style={{ background: '#fecaca', padding: '15px', borderRadius: '8px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '12px', color: '#991b1b', marginBottom: '5px' }}>Deductions</div>
+                        <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#7f1d1d' }}>Rs. {(ledgerModal.ledgerSummary.total_deduction || 0).toLocaleString()}</div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Add New Button */}
+                  <div style={{ marginBottom: '20px', textAlign: 'right' }}>
+                    <button 
+                      className="modal-btn btn-confirm" 
+                      onClick={() => setLedgerModal({ ...ledgerModal, showForm: true })}
+                      style={{ padding: '10px 20px' }}
+                    >
+                      ➕ Add New Entry
+                    </button>
+                  </div>
+
+                  {/* History Table */}
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+                      <thead>
+                        <tr style={{ background: '#f3f4f6', borderBottom: '2px solid #e5e7eb' }}>
+                          <th style={{ padding: '12px 8px', textAlign: 'left' }}>Date</th>
+                          <th style={{ padding: '12px 8px', textAlign: 'left' }}>Type</th>
+                          <th style={{ padding: '12px 8px', textAlign: 'right' }}>Amount</th>
+                          <th style={{ padding: '12px 8px', textAlign: 'left' }}>Method</th>
+                          <th style={{ padding: '12px 8px', textAlign: 'left' }}>Description</th>
+                          <th style={{ padding: '12px 8px', textAlign: 'center' }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ledgerModal.ledgerHistory.length === 0 ? (
+                          <tr>
+                            <td colSpan="6" style={{ padding: '30px', textAlign: 'center', color: '#9ca3af' }}>
+                              No entries yet. Click "Add New Entry" to create the first record.
+                            </td>
+                          </tr>
+                        ) : (
+                          ledgerModal.ledgerHistory.map((entry) => (
+                            <tr key={entry.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
+                              <td style={{ padding: '12px 8px' }}>{new Date(entry.transaction_date).toLocaleDateString()}</td>
+                              <td style={{ padding: '12px 8px' }}>
+                                <span style={{ 
+                                  padding: '4px 8px', 
+                                  borderRadius: '4px', 
+                                  fontSize: '12px',
+                                  background: entry.transaction_type === 'salary' ? '#dbeafe' : 
+                                            entry.transaction_type === 'advance' ? '#fef3c7' : 
+                                            entry.transaction_type === 'commission' ? '#d1fae5' : 
+                                            entry.transaction_type === 'deduction' ? '#fecaca' : '#f3f4f6',
+                                  color: entry.transaction_type === 'salary' ? '#1e40af' : 
+                                         entry.transaction_type === 'advance' ? '#92400e' : 
+                                         entry.transaction_type === 'commission' ? '#065f46' : 
+                                         entry.transaction_type === 'deduction' ? '#991b1b' : '#374151'
+                                }}>
+                                  {entry.transaction_type.charAt(0).toUpperCase() + entry.transaction_type.slice(1)}
+                                </span>
+                              </td>
+                              <td style={{ padding: '12px 8px', textAlign: 'right', fontWeight: '600' }}>
+                                Rs. {parseFloat(entry.amount).toLocaleString()}
+                              </td>
+                              <td style={{ padding: '12px 8px', textTransform: 'capitalize' }}>
+                                {entry.payment_method?.replace('_', ' ') || '-'}
+                              </td>
+                              <td style={{ padding: '12px 8px', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {entry.description || '-'}
+                              </td>
+                              <td style={{ padding: '12px 8px', textAlign: 'center' }}>
+                                <button 
+                                  onClick={() => handleDeleteLedgerEntry(entry.id)}
+                                  style={{ 
+                                    padding: '4px 8px', 
+                                    background: '#fee2e2', 
+                                    color: '#991b1b', 
+                                    border: 'none', 
+                                    borderRadius: '4px', 
+                                    cursor: 'pointer',
+                                    fontSize: '12px'
+                                  }}
+                                  title="Delete entry"
+                                >
+                                  🗑️ Delete
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                <div className="modal-actions">
+                  <button className="modal-btn btn-cancel" onClick={() => setLedgerModal({ ...ledgerModal, show: false })}>
+                    Close
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

@@ -102,6 +102,7 @@ app.use('/api/shared/shops', require('./src/routes/shared/shopRoutes'));
 
 // Sprint 4: Salesman Management & Dashboard Routes
 app.use('/api/desktop/salesmen', require('./src/routes/desktop/salesmanRoutes'));
+app.use('/api/desktop/salesman-ledger', require('./src/routes/desktop/salesmanLedgerRoutes'));
 app.use('/api/desktop/dashboard', require('./src/routes/desktop/dashboardRoutes'));
 app.use('/api/shared/salesmen', require('./src/routes/shared/salesmanRoutes'));
 
@@ -124,6 +125,10 @@ app.use('/api/mobile/sync', require('./src/routes/mobile/syncRoutes'));
 
 // Settings Routes
 app.use('/api/settings', require('./src/routes/settingsRoutes'));
+
+// Sprint 10: Stock Returns & Daily Collections
+app.use('/api/desktop/stock-returns', require('./src/routes/desktop/stockReturnRoutes'));
+app.use('/api/desktop/daily-collections', require('./src/routes/desktop/dailyCollectionRoutes'));
 
 // ============================================================
 // PERFORMANCE MONITORING ENDPOINTS
@@ -180,9 +185,9 @@ app.use((req, res) => {
 });
 
 const PORT = process.env.PORT || 5000;
-// Use 0.0.0.0 to allow access from mobile devices on the same network
-// For production, use specific IP or configure firewall rules
-const HOST = '0.0.0.0'; // Listen on all network interfaces (was 127.0.0.1)
+// Bind to specific VPS IP address for security
+// Only accessible via this IP address, not all network interfaces
+const HOST = process.env.HOST || '147.93.108.205'; // VPS IP address
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
@@ -195,6 +200,12 @@ process.on('uncaughtException', (error) => {
   console.error('❌ Uncaught Exception:', error);
   process.exit(1);
 });
+
+// Run auto-migrations on startup (MySQL only)
+if (!useSQLite) {
+  const { runMigrations } = require('./src/config/migrations');
+  runMigrations().catch(err => console.error('⚠️ Migration warning:', err.message));
+}
 
 const server = app.listen(PORT, HOST, () => {
   // Get actual network IP dynamically
@@ -233,3 +244,5 @@ server.on('error', (error) => {
   }
   process.exit(1);
 });
+
+module.exports = app;

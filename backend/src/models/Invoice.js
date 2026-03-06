@@ -237,24 +237,17 @@ class Invoice {
           balance_amount, status, notes
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` :
         `INSERT INTO invoices (
-          invoice_number, order_id, reference_number,
-          shop_id, shop_name, shop_owner_name, shop_address, shop_city, shop_area, shop_phone,
-          salesman_id, salesman_name, salesman_phone, salesman_code,
-          route_id, route_name,
-          company_name, company_address, company_city, company_phone, company_email, 
-          company_tax_number, company_logo_url,
+          invoice_number, order_id,
+          shop_id, shop_name,
+          salesman_id, salesman_name,
           subtotal, discount_percentage, discount_amount,
           tax_percentage, tax_amount, 
-          shipping_charges, other_charges, round_off,
-          net_amount, previous_balance, total_payable, balance_amount,
+          net_amount, balance_amount,
           payment_status, payment_type,
-          invoice_date, due_date, delivery_date, credit_days,
-          prepared_by, approved_by,
-          notes, terms_conditions, invoice_footer,
-          bank_name, bank_account_title, bank_account_number, bank_branch, bank_iban,
-          signature_url, qr_code_data,
+          invoice_date, due_date,
+          notes, terms_conditions,
           status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
       const invoiceParams = useSQLite ? [
         invoice_number,
@@ -270,57 +263,23 @@ class Invoice {
       ] : [
           invoice_number,
           invoiceData.order_id || null,
-          invoiceData.reference_number || orderDetails?.order_number || null,
           customerInfo.shop_id,
           customerInfo.shop_name,
-          customerInfo.shop_owner_name,
-          customerInfo.shop_address,
-          customerInfo.shop_city,
-          customerInfo.shop_area,
-          customerInfo.shop_phone,
           salesmanInfo.salesman_id,
           salesmanInfo.salesman_name,
-          salesmanInfo.salesman_phone,
-          salesmanInfo.salesman_code,
-          routeInfo.route_id,
-          routeInfo.route_name,
-          companyInfo.company_name,
-          companyInfo.company_address,
-          companyInfo.company_city,
-          companyInfo.company_phone,
-          companyInfo.company_email,
-          companyInfo.company_tax_number,
-          companyInfo.company_logo_url,
           subtotal,
           discount_percentage,
           discount_amount,
           tax_percentage,
           tax_amount,
-          shipping_charges,
-          other_charges,
-          round_off,
           net_amount,
-          previous_balance,
-          total_payable,
           total_payable, // Initial balance_amount = total_payable
-          'unpaid',
+          'unpaid', // payment_status
           invoiceData.payment_type || 'credit',
           invoice_date,
           due_date,
-          invoiceData.delivery_date || orderDetails?.order_date || null,
-          credit_days,
-          invoiceData.prepared_by || salesmanInfo.salesman_name,
-          invoiceData.approved_by || null,
           invoiceData.notes || null,
           invoiceData.terms_conditions || 'Payment due within credit period. Goods once sold will not be taken back.',
-          invoiceData.invoice_footer || 'This is a computer-generated invoice.',
-          invoiceData.bank_name || null,
-          invoiceData.bank_account_title || null,
-          invoiceData.bank_account_number || null,
-          invoiceData.bank_branch || null,
-          invoiceData.bank_iban || null,
-          invoiceData.signature_url || null,
-          invoiceData.qr_code_data || null,
           invoiceData.status || 'issued'
         ];
 
@@ -345,19 +304,17 @@ class Invoice {
         }
 
         // SQLite invoice_items has simpler schema: invoice_id, product_id, quantity, unit_price, discount_percentage, total_price
-        // MySQL invoice_details has full schema with product details, tax, etc.
+        // MySQL invoice_details has: invoice_id, product_id, product_name, product_code, quantity, unit_price, discount_percentage, discount_amount, total_amount
         const itemInsertQuery = useSQLite ?
           `INSERT INTO invoice_items (
             invoice_id, product_id, quantity, unit_price, discount_percentage, total_price
           ) VALUES (?, ?, ?, ?, ?, ?)` :
           `INSERT INTO invoice_details (
             invoice_id, product_id, product_name, product_code,
-            product_category, product_brand, pack_size,
             quantity, unit_price, 
             discount_percentage, discount_amount,
-            tax_percentage, tax_amount,
-            total_amount, notes
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+            total_amount
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
         const itemParams = useSQLite ? [
           invoiceId,
@@ -371,17 +328,11 @@ class Invoice {
           item.product_id,
           productDetails.product_name,
           productDetails.product_code || null,
-          productDetails.product_category || productDetails.category || null,
-          productDetails.product_brand || productDetails.brand || null,
-          productDetails.pack_size || null,
           item.quantity,
           item.unit_price,
           item.discount_percentage || 0,
           item.discount_amount || 0,
-          item.tax_percentage || 0,
-          item.tax_amount || 0,
-          item.total_amount,
-          item.notes || null
+          item.total_amount
         ];
 
         await connection.query(itemInsertQuery, itemParams);
@@ -855,13 +806,17 @@ class Invoice {
       
       const previousLedgerBalance = prevEntries.length > 0 ? parseFloat(prevEntries[0].balance) : 0;
       
-      // Payment received from shop = DEBIT (increases their credit/reduces their debt)
+      // Payment received from shop = DEBIT entry
+      // In debt tracking: Positive balance = shop owes us money
+      // Payment REDUCES their debt, so balance DECREASES
+      // Formula: newBalance = previousBalance + creditAmount - debitAmount
+      // For payment: debit = paymentAmount, credit = 0, so newBalance = previous - payment
       const debitAmount = paymentAmount;
       const creditAmount = 0;
-      const newLedgerBalance = previousLedgerBalance + debitAmount - creditAmount;
+      const newLedgerBalance = previousLedgerBalance + creditAmount - debitAmount;
       
       console.log(`💰 [LEDGER] Previous Balance: ${previousLedgerBalance}`);
-      console.log(`💰 [LEDGER] Debit (Payment): ${debitAmount}`);
+      console.log(`💰 [LEDGER] Debit (Payment): -${debitAmount}`);
       console.log(`💰 [LEDGER] New Balance: ${newLedgerBalance}`);
 
       // Build description based on payment status

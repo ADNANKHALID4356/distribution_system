@@ -138,6 +138,19 @@ const productService = {
   },
 
   /**
+   * Get all distinct company names
+   * @returns {Promise} Response with companies array
+   */
+  getCompanies: async () => {
+    try {
+      const response = await api.get('/desktop/products/companies');
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || error;
+    }
+  },
+
+  /**
    * Bulk import products from array
    * @param {Array} productsArray - Array of product objects
    * @returns {Promise} Response with success/error report for each product

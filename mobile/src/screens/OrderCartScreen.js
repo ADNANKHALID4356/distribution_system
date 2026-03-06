@@ -41,17 +41,17 @@ const OrderCartScreen = ({ route, navigation }) => {
   } = route.params;
   
   const [items, setItems] = useState(cartItems || []);
-  const [discountPercentage, setDiscountPercentage] = useState(existingDiscount);
+  const [discountAmount, setDiscountAmount] = useState(existingDiscount);
   const [notes, setNotes] = useState(existingNotes);
   const [totals, setTotals] = useState(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     calculateTotals();
-  }, [items, discountPercentage]);
+  }, [items, discountAmount]);
 
   const calculateTotals = () => {
-    const discount = parseFloat(discountPercentage) || 0;
+    const discount = parseFloat(discountAmount) || 0;
     const calculatedTotals = orderService.calculateOrderTotals(items, discount);
     setTotals(calculatedTotals);
   };
@@ -81,10 +81,24 @@ const OrderCartScreen = ({ route, navigation }) => {
     }
     
     updatedItems[index].quantity = newQuantity;
-    updatedItems[index].total_price = orderService.calculateItemTotal(
-      newQuantity,
-      updatedItems[index].unit_price
-    );
+    const itemDiscount = updatedItems[index].discount_percentage || 0;
+    const subtotal = newQuantity * updatedItems[index].unit_price;
+    const discountAmount = (subtotal * itemDiscount) / 100;
+    updatedItems[index].total_price = subtotal - discountAmount;
+    updatedItems[index].discount_amount = discountAmount;
+    
+    setItems(updatedItems);
+  };
+
+  const updateItemDiscount = (index, discount) => {
+    const updatedItems = [...items];
+    const discountValue = parseFloat(discount) || 0;
+    updatedItems[index].discount_percentage = discountValue;
+    
+    const subtotal = updatedItems[index].quantity * updatedItems[index].unit_price;
+    const discountAmount = (subtotal * discountValue) / 100;
+    updatedItems[index].discount_amount = discountAmount;
+    updatedItems[index].total_price = subtotal - discountAmount;
     
     setItems(updatedItems);
   };
@@ -128,7 +142,7 @@ const OrderCartScreen = ({ route, navigation }) => {
         await dbHelper.addOrderDetails(orderId, items);
         
         // Update totals
-        const discount = parseFloat(discountPercentage) || 0;
+        const discount = parseFloat(discountAmount) || 0;
         await orderService.updateOrderWithItems(orderId, items, discount, notes);
         
         orderResult = await dbHelper.getOrderById(orderId);
@@ -158,7 +172,7 @@ const OrderCartScreen = ({ route, navigation }) => {
         await dbHelper.addOrderDetails(orderResult.id, items);
         
         // Update totals
-        const discount = parseFloat(discountPercentage) || 0;
+        const discount = parseFloat(discountAmount) || 0;
         await orderService.updateOrderWithItems(orderResult.id, items, discount, notes);
         
         Alert.alert(
@@ -224,7 +238,7 @@ const OrderCartScreen = ({ route, navigation }) => {
               await dbHelper.addOrderDetails(orderResult.id, items);
               
               // Update totals
-              const discount = parseFloat(discountPercentage) || 0;
+              const discount = parseFloat(discountAmount) || 0;
               await orderService.updateOrderWithItems(orderResult.id, items, discount, notes);
               
               // Finalize order (change status to placed)
@@ -339,7 +353,7 @@ const OrderCartScreen = ({ route, navigation }) => {
                   existingCartItems: items, // Pass existing items
                   editMode: editMode,
                   orderId: orderId,
-                  existingDiscount: discountPercentage,
+                  existingDiscount: discountAmount,
                   existingNotes: notes,
                 });
               }}
@@ -367,6 +381,22 @@ const OrderCartScreen = ({ route, navigation }) => {
                   <Text style={styles.itemName}>{item.product_name}</Text>
                   <Text style={styles.itemCode}>{item.product_code}</Text>
                   <Text style={styles.itemPrice}>{formatCurrency(item.unit_price)} / unit</Text>
+                  
+                  {/* Item Discount */}
+                  <View style={styles.itemDiscountRow}>
+                    <Text style={styles.itemDiscountLabel}>Discount:</Text>
+                    <View style={styles.itemDiscountInput}>
+                      <TextInput
+                        style={styles.discountInputSmall}
+                        placeholder="0"
+                        keyboardType="decimal-pad"
+                        value={item.discount_percentage?.toString() || '0'}
+                        onChangeText={(text) => updateItemDiscount(index, text)}
+                        placeholderTextColor="#9CA3AF"
+                      />
+                      <Text style={styles.percentLabelSmall}>%</Text>
+                    </View>
+                  </View>
                 </View>
                 
                 <View style={styles.itemActions}>
@@ -411,11 +441,11 @@ const OrderCartScreen = ({ route, navigation }) => {
                 style={styles.discountInput}
                 placeholder="0"
                 keyboardType="decimal-pad"
-                value={discountPercentage}
-                onChangeText={setDiscountPercentage}
+                value={discountAmount}
+                onChangeText={setDiscountAmount}
                 placeholderTextColor="#9CA3AF"
               />
-              <Text style={styles.percentLabel}>%</Text>
+              <Text style={styles.percentLabel}>Rs.</Text>
             </View>
           </View>
         )}
@@ -449,7 +479,7 @@ const OrderCartScreen = ({ route, navigation }) => {
             {totals.discount_amount > 0 && (
               <View style={styles.summaryRow}>
                 <Text style={styles.summaryLabel}>
-                  Discount ({totals.discount_percentage}%)
+                  Discount
                 </Text>
                 <Text style={[styles.summaryValue, { color: '#EF4444' }]}>
                   - {formatCurrency(totals.discount_amount)}
@@ -618,6 +648,36 @@ const styles = StyleSheet.create({
   },
   deleteButton: {
     padding: 4,
+  },
+  itemDiscountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  itemDiscountLabel: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginRight: 8,
+  },
+  itemDiscountInput: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  discountInputSmall: {
+    width: 40,
+    fontSize: 13,
+    color: '#111827',
+    textAlign: 'center',
+    padding: 0,
+  },
+  percentLabelSmall: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginLeft: 2,
   },
   discountRow: {
     flexDirection: 'row',

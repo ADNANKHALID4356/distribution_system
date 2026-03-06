@@ -179,20 +179,6 @@ const InvoiceListingPage = () => {
       return;
     }
 
-    const confirmed = window.confirm(
-      `⚠️ BULK DELETE CONFIRMATION\n\n` +
-      `You are about to permanently delete ${selectedInvoices.length} cancelled invoice(s).\n\n` +
-      `This will remove:\n` +
-      `• Invoice records\n` +
-      `• Invoice items\n` +
-      `• Payment records\n` +
-      `• Delivery associations (cleared, not deleted)\n\n` +
-      `❌ THIS ACTION CANNOT BE UNDONE!\n\n` +
-      `Do you want to proceed?`
-    );
-
-    if (!confirmed) return;
-
     try {
       setBulkDeleting(true);
       setError('');
@@ -230,9 +216,6 @@ const InvoiceListingPage = () => {
   const handleDeleteInvoice = async (invoiceId) => {
     try {
       // First attempt: Try normal delete
-      const confirmDelete = window.confirm('Are you sure you want to cancel this invoice? This action cannot be undone.');
-      if (!confirmDelete) return;
-
       setLoading(true);
       await invoiceService.deleteInvoice(invoiceId, false);
       

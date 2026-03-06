@@ -32,6 +32,7 @@ const Product = {
       search = '', 
       category = '', 
       brand = '', 
+      company_name = '',
       stock_level = '', 
       is_active = null,
       orderBy = 'created_at',
@@ -79,6 +80,12 @@ const Product = {
       whereClause += ` AND p.brand = ?`;
       params.push(brand);
       countParams.push(brand);
+    }
+
+    if (company_name) {
+      whereClause += ` AND p.company_name = ?`;
+      params.push(company_name);
+      countParams.push(company_name);
     }
     
     // Stock level filtering
@@ -299,6 +306,7 @@ const Product = {
       product_name,
       category,
       brand,
+      company_name,
       pack_size,
       unit_price,
       carton_price,
@@ -313,13 +321,13 @@ const Product = {
     
     const [result] = await db.query(`
       INSERT INTO products (
-        product_code, product_name, category, brand, pack_size,
+        product_code, product_name, category, brand, company_name, pack_size,
         unit_price, carton_price, pieces_per_carton, purchase_price,
         stock_quantity, reorder_level, supplier_id, barcode,
         is_active
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
-      product_code, product_name, category, brand, pack_size,
+      product_code, product_name, category, brand, company_name || null, pack_size,
       unit_price, carton_price || 0, pieces_per_carton || 1, purchase_price || 0,
       stock_quantity || 0, reorder_level || 10, supplier_id || null, barcode || null,
       is_active !== false
@@ -336,6 +344,7 @@ const Product = {
       product_name,
       category,
       brand,
+      company_name,
       pack_size,
       unit_price,
       carton_price,
@@ -353,6 +362,7 @@ const Product = {
         product_name = ?,
         category = ?,
         brand = ?,
+        company_name = ?,
         pack_size = ?,
         unit_price = ?,
         carton_price = ?,
@@ -365,7 +375,7 @@ const Product = {
         is_active = ?
       WHERE id = ?
     `, [
-      product_name, category, brand, pack_size, unit_price,
+      product_name, category, brand, company_name || null, pack_size, unit_price,
       carton_price, pieces_per_carton, purchase_price, stock_quantity,
       reorder_level, supplier_id, barcode, is_active, id
     ]);
@@ -554,6 +564,20 @@ const Product = {
   },
 
   /**
+   * Get all company names (distinct)
+   */
+  async getCompanies() {
+    const [companies] = await db.query(`
+      SELECT DISTINCT company_name 
+      FROM products 
+      WHERE company_name IS NOT NULL AND company_name != ''
+      ORDER BY company_name ASC
+    `);
+    
+    return companies.map(c => c.company_name);
+  },
+
+  /**
    * Get all brands (distinct)
    */
   async getBrands() {
@@ -634,6 +658,7 @@ const Product = {
       search = '', 
       category = '', 
       brand = '', 
+      company_name = '',
       stock_level = '', 
       is_active = null,
       orderBy = 'created_at',
@@ -683,6 +708,12 @@ const Product = {
       whereClause += ` AND p.brand = ?`;
       params.push(brand);
       countParams.push(brand);
+    }
+
+    if (company_name) {
+      whereClause += ` AND p.company_name = ?`;
+      params.push(company_name);
+      countParams.push(company_name);
     }
     
     // Stock level filtering

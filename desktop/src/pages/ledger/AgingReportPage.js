@@ -16,6 +16,7 @@ const AgingReportPage = () => {
   const [agingData, setAgingData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   // Summary statistics
   const [summary, setSummary] = useState({
@@ -89,10 +90,87 @@ const AgingReportPage = () => {
 
   const handleExport = () => {
     // TODO: Implement Excel export
-    alert('Excel export will be implemented soon');
+    setSuccess('Excel export will be implemented soon');
+    setTimeout(() => setSuccess(''), 5000);
   };
 
   return (
+    <>
+      <style>{`
+        @page {
+          size: A4 landscape;
+          margin: 10mm 15mm;
+        }
+        @media print {
+          * {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+          body * {
+            visibility: hidden;
+          }
+          .container {
+            visibility: visible !important;
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            padding: 0 !important;
+            margin: 0 !important;
+          }
+          .container * {
+            visibility: visible;
+          }
+          /* Hide buttons */
+          button {
+            display: none !important;
+          }
+          /* Header */
+          h1 {
+            font-size: 18px;
+            margin-bottom: 5px;
+          }
+          p {
+            font-size: 10px;
+          }
+          /* Summary cards - show inline */
+          .grid {
+            display: flex !important;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 15px;
+            page-break-inside: avoid;
+          }
+          .grid > div {
+            flex: 1;
+            min-width: 120px;
+            font-size: 9px;
+          }
+          /* Table */
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 8px;
+            page-break-inside: auto;
+          }
+          thead {
+            display: table-header-group;
+          }
+          tr {
+            page-break-inside: avoid;
+            page-break-after: auto;
+          }
+          th, td {
+            border: 1px solid #333 !important;
+            padding: 3px 4px !important;
+            font-size: 8px !important;
+          }
+          th {
+            background-color: #e0e0e0 !important;
+            font-weight: bold;
+          }
+        }
+      `}</style>
     <div className="container mx-auto px-4 py-6">
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
@@ -124,9 +202,17 @@ const AgingReportPage = () => {
 
       {/* Error Message */}
       {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-          {error}
-          <button onClick={() => setError('')} className="float-right">×</button>
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 flex justify-between items-center">
+          <span>{error}</span>
+          <button onClick={() => setError('')} className="text-red-700 hover:text-red-900 font-bold">&times;</button>
+        </div>
+      )}
+
+      {/* Success Message */}
+      {success && (
+        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4 flex justify-between items-center">
+          <span>{success}</span>
+          <button onClick={() => setSuccess('')} className="text-green-700 hover:text-green-900 font-bold">&times;</button>
         </div>
       )}
 
@@ -398,6 +484,7 @@ const AgingReportPage = () => {
         </div>
       )}
     </div>
+    </>
   );
 };
 

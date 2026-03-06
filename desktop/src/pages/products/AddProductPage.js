@@ -10,6 +10,7 @@ const AddProductPage = () => {
   const [error, setError] = useState('');
   const [categories, setCategories] = useState([]);
   const [brands, setBrands] = useState([]);
+  const [companies, setCompanies] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
   const [selectedWarehouses, setSelectedWarehouses] = useState([]);
   const [autoGenerateCode, setAutoGenerateCode] = useState(true);
@@ -19,6 +20,7 @@ const AddProductPage = () => {
     product_name: '',
     category: '',
     brand: '',
+    company_name: '',
     pack_size: '',
     unit_price: '',
     carton_price: '',
@@ -35,14 +37,16 @@ const AddProductPage = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [categoriesRes, brandsRes, warehousesRes] = await Promise.all([
+        const [categoriesRes, brandsRes, companiesRes, warehousesRes] = await Promise.all([
           productService.getCategories(),
           productService.getBrands(),
+          productService.getCompanies(),
           warehouseService.getAllWarehouses({ status: 'active' })
         ]);
         
         if (categoriesRes.success) setCategories(categoriesRes.data);
         if (brandsRes.success) setBrands(brandsRes.data);
+        if (companiesRes.success) setCompanies(companiesRes.data);
         if (warehousesRes.success) {
           setWarehouses(warehousesRes.data || []);
           // Auto-select default warehouse
@@ -270,6 +274,27 @@ const AddProductPage = () => {
                 <datalist id="brands">
                   {brands.map((brand) => (
                     <option key={brand} value={brand} />
+                  ))}
+                </datalist>
+              </div>
+
+              {/* Company Name */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Company Name
+                </label>
+                <input
+                  type="text"
+                  name="company_name"
+                  value={formData.company_name}
+                  onChange={handleChange}
+                  list="companies"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                  placeholder="Enter or select company"
+                />
+                <datalist id="companies">
+                  {companies.map((company) => (
+                    <option key={company} value={company} />
                   ))}
                 </datalist>
               </div>

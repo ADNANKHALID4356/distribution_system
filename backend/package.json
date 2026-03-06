@@ -9,7 +9,8 @@
     "dev": "nodemon server.js",
     "setup-db": "node setup-db.js",
     "build-standalone": "pkg standalone.js --targets node18-win-x64 --output ../desktop/backend-standalone/backend.exe",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "jest --forceExit --detectOpenHandles --testTimeout=30000",
+    "test:verbose": "jest --verbose --forceExit --detectOpenHandles --testTimeout=30000"
   },
   "pkg": {
     "assets": [
@@ -41,7 +42,9 @@
     "mysql2": "^3.15.3"
   },
   "devDependencies": {
+    "jest": "^30.2.0",
     "nodemon": "^3.1.11",
-    "pkg": "^5.8.1"
+    "pkg": "^5.8.1",
+    "supertest": "^7.2.2"
   }
 }

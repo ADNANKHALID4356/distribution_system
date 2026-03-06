@@ -71,6 +71,16 @@ const routeService = {
     } catch (error) {
       throw error.response?.data || error;
     }
+  },
+
+  // Get route-wise consolidated bill
+  getConsolidatedBill: async (routeId, params = {}) => {
+    try {
+      const response = await api.get(`/desktop/routes/${routeId}/consolidated-bill`, { params });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || error;
+    }
   }
 };
 

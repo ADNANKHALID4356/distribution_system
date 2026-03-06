@@ -86,7 +86,7 @@ exports.getDashboardStats = async (req, res) => {
       `);
       const warehouseStockTotal = stockRows[0] || {};
       
-      // Get delivery stats
+      // Get delivery stats (UPDATED - replaces invoice stats)
       const [deliveryRows] = await db.query(`
         SELECT 
           COUNT(*) as total_deliveries,
@@ -97,18 +97,6 @@ exports.getDashboardStats = async (req, res) => {
       `);
       const deliveryStats = deliveryRows[0] || {};
       console.log('🚚 Delivery stats:', deliveryStats);
-      
-      // Get invoice stats
-      const [invoiceRows] = await db.query(`
-        SELECT 
-          COUNT(*) as total_invoices,
-          SUM(CASE WHEN status = 'unpaid' THEN 1 ELSE 0 END) as unpaid_invoices,
-          SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid_invoices,
-          SUM(CASE WHEN status = 'partial' THEN 1 ELSE 0 END) as partial_invoices
-        FROM invoices
-      `);
-      const invoiceStats = invoiceRows[0] || {};
-      console.log('🧾 Invoice stats:', invoiceStats);
       
       dashboardStats = {
         // Products - with inventory metrics
@@ -149,11 +137,11 @@ exports.getDashboardStats = async (req, res) => {
         in_transit_deliveries: deliveryStats.in_transit_deliveries || 0,
         delivered_deliveries: deliveryStats.delivered_deliveries || 0,
         
-        // Invoices
-        total_invoices: invoiceStats.total_invoices || 0,
-        unpaid_invoices: invoiceStats.unpaid_invoices || 0,
-        paid_invoices: invoiceStats.paid_invoices || 0,
-        partial_invoices: invoiceStats.partial_invoices || 0,
+        // Deliveries (UPDATED - replaces invoices)
+        total_deliveries: deliveryStats.total_deliveries || 0,
+        pending_deliveries: deliveryStats.pending_deliveries || 0,
+        in_transit_deliveries: deliveryStats.in_transit_deliveries || 0,
+        delivered_deliveries: deliveryStats.delivered_deliveries || 0,
         
         // Load Sheets (may not exist in SQLite)
         total_load_sheets: 0,

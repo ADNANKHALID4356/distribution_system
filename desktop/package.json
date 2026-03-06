@@ -1,6 +1,6 @@
 {
-  "name": "desktop",
-  "version": "0.1.0",
+  "name": "distribution-management-system",
+  "version": "1.0.0",
   "description": "Professional distribution management system for warehouse and sales operations",
   "author": "Ummahtechinnovations",
   "private": true,
@@ -77,10 +77,7 @@
     },
     "files": [
       "build/**/*",
-      {
-        "from": "public/electron-client.js",
-        "to": "electron-client.js"
-      },
+      "electron-client.js",
       "package.json"
     ],
     "extraResources": [
@@ -101,6 +98,7 @@
           ]
         }
       ],
+      "icon": "build/logo512.png",
       "artifactName": "${productName}-Setup-${version}.${ext}"
     },
     "nsis": {
@@ -112,8 +110,7 @@
       "shortcutName": "Distribution System",
       "deleteAppDataOnUninstall": false,
       "perMachine": false,
-      "runAfterFinish": true,
-      "license": false
+      "runAfterFinish": true
     }
   }
 }

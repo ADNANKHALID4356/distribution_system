@@ -27,6 +27,8 @@ const DeliveryTrackingPage = () => {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   
   // Bulk delete states
   const [selectedDeliveries, setSelectedDeliveries] = useState(new Set());
@@ -159,7 +161,8 @@ const DeliveryTrackingPage = () => {
     console.log('🖨️ Print button clicked');
     
     if (!selectedDelivery) {
-      alert('No delivery selected');
+      setError('No delivery selected');
+      setTimeout(() => setError(''), 5000);
       return;
     }
     
@@ -168,7 +171,8 @@ const DeliveryTrackingPage = () => {
       const printWindow = window.open('', '_blank');
       
       if (!printWindow) {
-        alert('Pop-up blocked! Please allow pop-ups.');
+        setError('Pop-up blocked! Please allow pop-ups.');
+        setTimeout(() => setError(''), 5000);
         return;
       }
       
@@ -575,7 +579,8 @@ const DeliveryTrackingPage = () => {
       console.log('✅ Print window created successfully');
     } catch (error) {
       console.error('❌ Print error:', error);
-      alert('Error: ' + error.message);
+      setError('Error: ' + error.message);
+      setTimeout(() => setError(''), 5000);
     }
   };
 
@@ -795,6 +800,22 @@ const DeliveryTrackingPage = () => {
             <AlertCircle className="h-5 w-5" />
           )}
           {message.text}
+        </div>
+      )}
+
+      {/* Error Alert */}
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 flex justify-between items-center">
+          <span>{error}</span>
+          <button onClick={() => setError('')} className="text-red-700 hover:text-red-900 font-bold">&times;</button>
+        </div>
+      )}
+
+      {/* Success Alert */}
+      {success && (
+        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4 flex justify-between items-center">
+          <span>{success}</span>
+          <button onClick={() => setSuccess('')} className="text-green-700 hover:text-green-900 font-bold">&times;</button>
         </div>
       )}
 
@@ -1199,6 +1220,7 @@ const DeliveryTrackingPage = () => {
                         <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Product</th>
                         <th className="px-4 py-2 text-right text-xs font-medium text-gray-500">Quantity</th>
                         <th className="px-4 py-2 text-right text-xs font-medium text-gray-500">Price</th>
+                        <th className="px-4 py-2 text-right text-xs font-medium text-gray-500">Discount</th>
                         <th className="px-4 py-2 text-right text-xs font-medium text-gray-500">Total</th>
                       </tr>
                     </thead>
@@ -1209,6 +1231,16 @@ const DeliveryTrackingPage = () => {
                           <td className="px-4 py-2 text-sm">{item.product_name}</td>
                           <td className="px-4 py-2 text-sm text-right">{parseFloat(item.quantity_delivered || item.quantity_ordered || 0).toFixed(2)}</td>
                           <td className="px-4 py-2 text-sm text-right">Rs. {parseFloat(item.unit_price || 0).toFixed(2)}</td>
+                          <td className="px-4 py-2 text-sm text-right text-red-600">
+                            {parseFloat(item.discount_amount || 0) > 0 ? (
+                              <div>
+                                <div>- Rs. {parseFloat(item.discount_amount || 0).toFixed(2)}</div>
+                                {parseFloat(item.discount_percentage || 0) > 0 && (
+                                  <div className="text-xs text-red-400">({parseFloat(item.discount_percentage || 0).toFixed(1)}%)</div>
+                                )}
+                              </div>
+                            ) : '-'}
+                          </td>
                           <td className="px-4 py-2 text-sm text-right">Rs. {parseFloat(item.total_price || 0).toFixed(2)}</td>
                         </tr>
                       ))}

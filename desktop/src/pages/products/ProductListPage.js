@@ -19,6 +19,7 @@ const ProductListPage = () => {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [brands, setBrands] = useState([]);
+  const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -38,6 +39,7 @@ const ProductListPage = () => {
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedBrand, setSelectedBrand] = useState('');
+  const [selectedCompany, setSelectedCompany] = useState('');
   const [selectedStockLevel, setSelectedStockLevel] = useState(''); // Stock level filter
   const [selectedStatus, setSelectedStatus] = useState('true'); // Default to showing only active products
   const [showFilters, setShowFilters] = useState(false);
@@ -54,6 +56,7 @@ const ProductListPage = () => {
       if (search) params.search = search;
       if (selectedCategory) params.category = selectedCategory;
       if (selectedBrand) params.brand = selectedBrand;
+      if (selectedCompany) params.company_name = selectedCompany;
       if (selectedStockLevel) params.stock_level = selectedStockLevel;
       if (selectedStatus !== '') params.is_active = selectedStatus === 'true';
 
@@ -74,13 +77,15 @@ const ProductListPage = () => {
   // Fetch filter options
   const fetchFilterOptions = async () => {
     try {
-      const [categoriesRes, brandsRes] = await Promise.all([
+      const [categoriesRes, brandsRes, companiesRes] = await Promise.all([
         productService.getCategories(),
         productService.getBrands(),
+        productService.getCompanies(),
       ]);
       
       if (categoriesRes.success) setCategories(categoriesRes.data);
       if (brandsRes.success) setBrands(brandsRes.data);
+      if (companiesRes.success) setCompanies(companiesRes.data);
     } catch (err) {
       console.error('Failed to fetch filter options:', err);
     }
@@ -89,7 +94,7 @@ const ProductListPage = () => {
   useEffect(() => {
     fetchProducts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPage, search, selectedCategory, selectedBrand, selectedStockLevel, selectedStatus]);
+  }, [currentPage, search, selectedCategory, selectedBrand, selectedCompany, selectedStockLevel, selectedStatus]);
 
   useEffect(() => {
     fetchFilterOptions();
@@ -97,10 +102,6 @@ const ProductListPage = () => {
 
   // Handle delete product
   const handleDelete = async (id, productName) => {
-    if (!window.confirm(`Are you sure you want to delete "${productName}"?`)) {
-      return;
-    }
-
     try {
       const response = await productService.deleteProduct(id);
       if (response.success) {
@@ -129,6 +130,9 @@ const ProductListPage = () => {
       case 'brand':
         setSelectedBrand(value);
         break;
+      case 'company':
+        setSelectedCompany(value);
+        break;
       case 'stock_level':
         setSelectedStockLevel(value);
         break;
@@ -146,6 +150,7 @@ const ProductListPage = () => {
     setSearch('');
     setSelectedCategory('');
     setSelectedBrand('');
+    setSelectedCompany('');
     setSelectedStockLevel('');
     setSelectedStatus('true'); // Reset to show only active products (default)
     setCurrentPage(1);
@@ -288,7 +293,7 @@ const ProductListPage = () => {
                 <FunnelIcon className="w-4 h-4 mr-2" />
                 {showFilters ? 'Hide Filters' : 'Show Filters'}
               </button>
-              {(selectedCategory || selectedBrand || selectedStockLevel || selectedStatus) && (
+              {(selectedCategory || selectedBrand || selectedCompany || selectedStockLevel || selectedStatus) && (
                 <button
                   onClick={clearFilters}
                   className="text-sm text-primary-600 hover:text-primary-800"
@@ -334,6 +339,25 @@ const ProductListPage = () => {
                     {brands.map((brand) => (
                       <option key={brand} value={brand}>
                         {brand}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Company Filter */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    Company
+                  </label>
+                  <select
+                    value={selectedCompany}
+                    onChange={(e) => handleFilterChange('company', e.target.value)}
+                    className="block w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                  >
+                    <option value="">All Companies</option>
+                    {companies.map((company) => (
+                      <option key={company} value={company}>
+                        {company}
                       </option>
                     ))}
                   </select>
@@ -413,6 +437,9 @@ const ProductListPage = () => {
                         Brand
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Company
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Price (PKR)
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -452,6 +479,9 @@ const ProductListPage = () => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           {product.brand || '-'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {product.company_name || '-'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {product.unit_price ? product.unit_price.toFixed(2) : '-'}

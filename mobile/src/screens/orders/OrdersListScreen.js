@@ -300,10 +300,8 @@ const OrdersListScreen = ({ navigation }) => {
         return;
       }
       
-      // Calculate discount percentage from order
-      const discountPercentage = orderDetails.discount > 0 
-        ? ((orderDetails.discount / orderDetails.total_amount) * 100).toFixed(2)
-        : '0';
+      // Get discount amount from order (stored as price, not percentage)
+      const discountAmount = orderDetails.discount?.toString() || '0';
       
       // Format items for OrderCart
       const cartItems = orderDetails.items.map(item => ({
@@ -326,7 +324,7 @@ const OrdersListScreen = ({ navigation }) => {
         cartItems: cartItems,
         editMode: true,
         orderId: order.id,
-        existingDiscount: discountPercentage,
+        existingDiscount: discountAmount,
         existingNotes: orderDetails.notes || '',
       });
     } catch (error) {

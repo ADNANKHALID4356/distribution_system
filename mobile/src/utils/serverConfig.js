@@ -2,18 +2,34 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const SERVER_CONFIG_KEY = '@distribution_server_config';
 
-// Default configuration - VPS Production Server
+// Default configuration - Local Development Server
 // ============================================
 // SINGLE SOURCE OF TRUTH FOR SERVER URL
 // ============================================
 // To change the server for all new installs, update ONLY this DEFAULT_CONFIG
 // For local development, change to your computer's IP address
 // To find your IP: Run 'ipconfig' (Windows) or 'ifconfig' (Mac/Linux)
+//
+// MOBILE TESTING OPTIONS:
+// - Android Emulator: Use '10.0.2.2' (maps to host machine's localhost)
+// - iOS Simulator: Use 'localhost'
+// - Physical Device: Use your computer's actual IP address (e.g., '192.168.1.100')
+//
+// NOTE: To find your computer's IP on Windows: ipconfig | findstr IPv4
+
+// Production server (VPS) - ACTIVE:
 const DEFAULT_CONFIG = {
-  host: '147.93.108.205', // VPS Production Server
-  port: '5001',
-  protocol: 'http'
+  host: '147.93.108.205',  // VPS Production Server
+  port: '5001',            // Backend API port
+  protocol: 'http'         // HTTP
 };
+
+// Local Development Server - uncomment for local testing:
+// const DEFAULT_CONFIG = {
+//   host: '172.16.0.2',      // Current local IP (Updated: Feb 8, 2026)
+//   port: '5000',            // Local backend port
+//   protocol: 'http'
+// };
 
 /**
  * Get default server URL (synchronous - for initial load)
@@ -39,7 +55,7 @@ export const getServerConfig = async () => {
       return JSON.parse(stored);
     }
   } catch (error) {
-    console.error('Error reading server config:', error);
+    console.warn('⚠️ Error reading server config, using default:', error.message);
   }
   return DEFAULT_CONFIG;
 };

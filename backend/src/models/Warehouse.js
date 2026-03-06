@@ -390,17 +390,17 @@ class Warehouse {
       );
 
       if (existing.length > 0) {
-        // Update existing
+        // Update existing (MySQL syntax)
         await db.query(`
           UPDATE warehouse_stock 
-          SET quantity = ?, created_by = ?, last_updated = datetime('now')
+          SET quantity = ?, created_by = ?
           WHERE warehouse_id = ? AND product_id = ?
         `, [quantity, userId, warehouseId, productId]);
       } else {
-        // Insert new
+        // Insert new (MySQL syntax - let database handle timestamps)
         await db.query(`
-          INSERT INTO warehouse_stock (warehouse_id, product_id, quantity, created_by, created_at, last_updated)
-          VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
+          INSERT INTO warehouse_stock (warehouse_id, product_id, quantity, created_by)
+          VALUES (?, ?, ?, ?)
         `, [warehouseId, productId, quantity, userId]);
       }
 

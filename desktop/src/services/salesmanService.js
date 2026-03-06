@@ -179,6 +179,56 @@ const salesmanService = {
     } catch (error) {
       throw error.response?.data || error;
     }
+  },
+
+  /**
+   * Create salary/ledger entry
+   */
+  async createLedgerEntry(entryData) {
+    try {
+      const response = await api.post('/desktop/salesman-ledger', entryData);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || error;
+    }
+  },
+
+  /**
+   * Get ledger entries for a salesman
+   */
+  async getSalesmanLedger(salesmanId, filters = {}) {
+    try {
+      const response = await api.get(`/desktop/salesman-ledger/salesman/${salesmanId}`, { params: filters });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || error;
+    }
+  },
+
+  /**
+   * Get salary summary for a salesman
+   */
+  async getSalarySummary(salesmanId, year, month) {
+    try {
+      const response = await api.get(`/desktop/salesman-ledger/salesman/${salesmanId}/summary`, {
+        params: { year, month }
+      });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || error;
+    }
+  },
+
+  /**
+   * Delete a ledger entry
+   */
+  async deleteLedgerEntry(entryId) {
+    try {
+      const response = await api.delete(`/desktop/salesman-ledger/${entryId}`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || error;
+    }
   }
 };
 

@@ -233,6 +233,96 @@ const ShopLedgerPage = () => {
   };
 
   return (
+    <>
+      <style>{`
+        @page {
+          size: A4 landscape;
+          margin: 10mm 15mm;
+        }
+        @media print {
+          * {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+          body * {
+            visibility: hidden;
+          }
+          .container {
+            visibility: visible !important;
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            padding: 0 !important;
+            margin: 0 !important;
+          }
+          .container * {
+            visibility: visible;
+          }
+          /* Hide buttons and interactive elements */
+          button, .no-print {
+            display: none !important;
+          }
+          /* Header styling */
+          h1 {
+            font-size: 18px;
+            margin-bottom: 5px;
+          }
+          p {
+            font-size: 10px;
+            margin: 2px 0;
+          }
+          /* Balance card */
+          .bg-white {
+            box-shadow: none;
+            border: 1px solid #ddd;
+            page-break-inside: avoid;
+          }
+          /* Table styling */
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 9px;
+            page-break-inside: auto;
+          }
+          thead {
+            display: table-header-group;
+            page-break-after: avoid;
+          }
+          tbody {
+            display: table-row-group;
+          }
+          tr {
+            page-break-inside: avoid;
+            page-break-after: auto;
+          }
+          th, td {
+            border: 1px solid #333 !important;
+            padding: 4px 6px !important;
+            font-size: 9px !important;
+          }
+          th {
+            background-color: #e0e0e0 !important;
+            font-weight: bold;
+            text-align: left;
+          }
+          td {
+            background-color: white !important;
+          }
+          /* Ensure balance is bold */
+          tr td:last-child {
+            font-weight: bold;
+          }
+          /* Filters section - hide */
+          .bg-gray-100, .filters {
+            display: none !important;
+          }
+          /* Pagination - hide */
+          .pagination {
+            display: none !important;
+          }
+        }
+      `}</style>
     <div className="container mx-auto px-4 py-6">
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
@@ -745,6 +835,7 @@ const ShopLedgerPage = () => {
         </div>
       )}
     </div>
+    </>
   );
 };
 

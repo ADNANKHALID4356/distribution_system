@@ -687,11 +687,17 @@ class SyncService {
 
         // Upload batch to backend
         try {
+          console.log(`🌐 Sending ${formattedOrders.length} orders to backend...`);
+          console.log(`🌐 Endpoint: POST /mobile/sync/orders`);
+          console.log(`🌐 Salesman ID: ${salesmanId}`);
+          
           const response = await api.post('/mobile/sync/orders', {
             salesman_id: salesmanId,
             device_info: device,
             orders: formattedOrders,
           });
+
+          console.log(`📡 Response received:`, response.data);
 
           if (response.data.success) {
             const { results } = response.data;
@@ -737,13 +743,24 @@ class SyncService {
           }
         } catch (batchError) {
           console.error(`❌ Batch upload error:`, batchError);
+          console.error(`❌ Error details:`, {
+            message: batchError.message,
+            response: batchError.response?.data,
+            status: batchError.response?.status,
+            config: {
+              url: batchError.config?.url,
+              baseURL: batchError.config?.baseURL,
+              method: batchError.config?.method,
+            }
+          });
           
           // Mark all orders in batch as failed
           for (const order of batch) {
-            await dbHelper.updateOrderSyncError(order.id, batchError.message);
+            const errorMessage = batchError.response?.data?.message || batchError.message;
+            await dbHelper.updateOrderSyncError(order.id, errorMessage);
             errors.push({ 
               mobile_order_id: order.order_number, 
-              error: batchError.message 
+              error: errorMessage
             });
           }
           totalFailed += batch.length;

@@ -14,8 +14,9 @@ import AddEditShopPage from './pages/shops/AddEditShopPage';
 import SalesmanListingPage from './pages/salesmen/SalesmanListingPage';
 import AddEditSalesmanPage from './pages/salesmen/AddEditSalesmanPage';
 import OrderManagementPage from './pages/orders/OrderManagementPage';
-import InvoiceListingPage from './pages/invoices/InvoiceListingPage';
-import InvoiceGenerationPage from './pages/invoices/InvoiceGenerationPage';
+// Invoice pages removed - direct order-to-delivery flow (Feb 7, 2026)
+// import InvoiceListingPage from './pages/invoices/InvoiceListingPage';
+// import InvoiceGenerationPage from './pages/invoices/InvoiceGenerationPage';
 import CompanySettingsPage from './pages/settings/CompanySettingsPage';
 import WarehouseManagementPage from './pages/warehouse/WarehouseManagementPage';
 import DeliveryChallanPage from './pages/delivery/DeliveryChallanPage';
@@ -24,6 +25,9 @@ import ShopLedgerPage from './pages/ledger/ShopLedgerPage';
 import PaymentRecordPage from './pages/ledger/PaymentRecordPage';
 import AgingReportPage from './pages/ledger/AgingReportPage';
 import LedgerDashboardPage from './pages/ledger/LedgerDashboardPage';
+import StockReturnsPage from './pages/returns/StockReturnsPage';
+import DailyCollectionsPage from './pages/collections/DailyCollectionsPage';
+import RouteConsolidatedBillPage from './pages/routes/RouteConsolidatedBillPage';
 
 function App() {
   return (
@@ -148,7 +152,8 @@ function App() {
               </ProtectedRoute>
             }
           />
-          {/* Invoice Management Routes - Sprint 7 */}
+          {/* Invoice Management Routes - DEPRECATED (Feb 7, 2026)
+              NEW FLOW: Orders → Delivery Challans (no invoices)
           <Route
             path="/invoices"
             element={
@@ -165,6 +170,7 @@ function App() {
               </ProtectedRoute>
             }
           />
+          */}
           {/* Settings Routes */}
           <Route
             path="/settings/company"
@@ -230,6 +236,33 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['Admin', 'Manager']}>
                 <AgingReportPage />
+              </ProtectedRoute>
+            }
+          />
+          {/* Stock Returns Routes */}
+          <Route
+            path="/stock-returns"
+            element={
+              <ProtectedRoute allowedRoles={['Admin', 'Manager']}>
+                <StockReturnsPage />
+              </ProtectedRoute>
+            }
+          />
+          {/* Daily Collections Routes */}
+          <Route
+            path="/daily-collections"
+            element={
+              <ProtectedRoute allowedRoles={['Admin', 'Manager']}>
+                <DailyCollectionsPage />
+              </ProtectedRoute>
+            }
+          />
+          {/* Route Consolidated Bill */}
+          <Route
+            path="/routes/consolidated-bill"
+            element={
+              <ProtectedRoute allowedRoles={['Admin', 'Manager']}>
+                <RouteConsolidatedBillPage />
               </ProtectedRoute>
             }
           />

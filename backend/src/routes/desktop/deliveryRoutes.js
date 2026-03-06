@@ -8,6 +8,8 @@ const {
   getAllDeliveriesWithItems,
   getDeliveryById,
   createDelivery,
+  createDeliveryFromOrder,
+  getAvailableOrdersForDelivery,
   updateDeliveryStatus,
   getDeliveryStatistics,
   deleteDelivery,
@@ -18,6 +20,12 @@ const {
 const { protect } = require('../../middleware/auth');
 
 // All delivery routes are protected
+
+// 🆕 NEW ROUTES: Order-based delivery creation (NO INVOICE)
+router.get('/available-orders', protect, getAvailableOrdersForDelivery);
+router.post('/from-order', protect, createDeliveryFromOrder);
+
+// Existing routes
 router.get('/', protect, getAllDeliveries);
 router.get('/with-items', protect, getAllDeliveriesWithItems);
 router.get('/statistics', protect, getDeliveryStatistics);

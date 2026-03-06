@@ -5,6 +5,35 @@ import api from './api';
 
 const deliveryService = {
   /**
+   * 🆕 Get approved/finalized orders available for delivery creation (NEW FLOW)
+   */
+  getAvailableOrdersForDelivery: async () => {
+    try {
+      const response = await api.get('/desktop/deliveries/available-orders');
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching available orders:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * 🆕 Create delivery challan directly from an order (NEW FLOW - NO INVOICE)
+   */
+  createDeliveryFromOrder: async (orderId, deliveryData) => {
+    try {
+      const response = await api.post('/desktop/deliveries/from-order', {
+        orderId: orderId,
+        delivery: deliveryData
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error creating delivery from order:', error);
+      throw error;
+    }
+  },
+
+  /**
    * Get all deliveries
    */
   getAllDeliveries: async (filters = {}) => {

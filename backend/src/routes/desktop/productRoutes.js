@@ -15,6 +15,7 @@ const {
   getLowStockProducts,
   getCategories,
   getBrands,
+  getCompanies,
   bulkImportProducts,
   getProductWarehouseStock
 } = require('../../controllers/productController');
@@ -31,6 +32,11 @@ router.get('/categories', authorize('Admin', 'Manager'), getCategories);
 // @desc    Get all brands
 // @access  Private (Admin, Manager)
 router.get('/brands', authorize('Admin', 'Manager'), getBrands);
+
+// @route   GET /api/desktop/products/companies
+// @desc    Get all companies
+// @access  Private (Admin, Manager)
+router.get('/companies', authorize('Admin', 'Manager'), getCompanies);
 
 // @route   GET /api/desktop/products/low-stock
 // @desc    Get low stock products

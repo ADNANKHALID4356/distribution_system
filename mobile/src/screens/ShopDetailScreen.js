@@ -270,8 +270,8 @@ const ShopDetailScreen = ({ route, navigation }) => {
           </View>
         </View>
 
-        {/* Create Order Button - Sprint 5 - ALWAYS VISIBLE */}
-        {user && user.salesman_id && (
+        {/* Create Order Button - Sprint 5 - VISIBLE FOR ALL AUTHENTICATED USERS */}
+        {user && (
           <View style={styles.section}>
             <TouchableOpacity
               style={styles.createOrderButton}
@@ -279,7 +279,7 @@ const ShopDetailScreen = ({ route, navigation }) => {
                 navigation.navigate('ProductSelection', {
                   shopId: shop.id,
                   shopName: shop.shop_name,
-                  salesmanId: user.salesman_id,
+                  salesmanId: user.salesman_id || user.id, // Use salesman_id if exists, otherwise user.id
                   salesmanName: user.full_name || user.username,
                   routeId: shop.route_id,
                   routeName: shop.route_name,

@@ -10,7 +10,7 @@ const Product = require('../models/Product');
 // @access  Private
 exports.getProducts = async (req, res) => {
   try {
-    const { page, limit, search, category, brand, stock_level, is_active } = req.query;
+    const { page, limit, search, category, brand, company_name, stock_level, is_active } = req.query;
     
     const options = {
       page: parseInt(page) || 1,
@@ -18,6 +18,7 @@ exports.getProducts = async (req, res) => {
       search,
       category,
       brand,
+      company_name,
       stock_level, // New: in_stock, low_stock, out_of_stock
       is_active: is_active !== undefined ? is_active === 'true' : null
     };
@@ -77,6 +78,7 @@ exports.createProduct = async (req, res) => {
       product_name,
       category,
       brand,
+      company_name,
       pack_size,
       unit_price,
       carton_price,
@@ -136,6 +138,7 @@ exports.createProduct = async (req, res) => {
       product_name,
       category,
       brand,
+      company_name,
       pack_size,
       unit_price,
       carton_price,
@@ -187,6 +190,7 @@ exports.updateProduct = async (req, res) => {
       product_name,
       category,
       brand,
+      company_name,
       pack_size,
       unit_price,
       carton_price,
@@ -230,6 +234,7 @@ exports.updateProduct = async (req, res) => {
       product_name,
       category,
       brand,
+      company_name,
       pack_size,
       unit_price,
       carton_price,
@@ -371,6 +376,27 @@ exports.getBrands = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error fetching brands',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Get companies
+// @route   GET /api/desktop/products/companies
+// @access  Private
+exports.getCompanies = async (req, res) => {
+  try {
+    const companies = await Product.getCompanies();
+    
+    res.json({
+      success: true,
+      data: companies
+    });
+  } catch (error) {
+    console.error('Get companies error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching companies',
       error: error.message
     });
   }

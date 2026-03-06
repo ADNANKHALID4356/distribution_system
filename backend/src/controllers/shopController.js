@@ -17,7 +17,11 @@ exports.getAllShops = async (req, res) => {
     const params = [];
     
     if (search) {
-      query += ' AND (shop_code LIKE ? OR shop_name LIKE ? OR owner_name LIKE ? OR phone LIKE ?)';
+      if (useSQLite) {
+        query += ' AND (shop_code LIKE ? COLLATE NOCASE OR shop_name LIKE ? COLLATE NOCASE OR owner_name LIKE ? COLLATE NOCASE OR phone LIKE ?)';
+      } else {
+        query += ' AND (shop_code LIKE ? OR shop_name LIKE ? OR owner_name LIKE ? OR phone LIKE ?)';
+      }
       params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
     }
 
@@ -27,7 +31,11 @@ exports.getAllShops = async (req, res) => {
     }
 
     if (city) {
-      query += ' AND city LIKE ?';
+      if (useSQLite) {
+        query += ' AND city LIKE ? COLLATE NOCASE';
+      } else {
+        query += ' AND city LIKE ?';
+      }
       params.push(`%${city}%`);
     }
 

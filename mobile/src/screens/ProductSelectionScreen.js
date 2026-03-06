@@ -17,12 +17,16 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import dbHelper from '../database/dbHelper';
 import orderService from '../services/orderService';
+import productService from '../services/productService';
+import { useAuth } from '../context/AuthContext';
 
 const ProductSelectionScreen = ({ route, navigation }) => {
+  const { user } = useAuth();
   const { 
     shopId, 
     shopName, 
@@ -37,10 +41,14 @@ const ProductSelectionScreen = ({ route, navigation }) => {
     existingNotes = '',
   } = route.params;
   
+  // Check if user is salesman (role_id = 3)
+  const isSalesman = user?.role_id === 3;
+  
   const [products, setProducts] = useState([]);
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [cart, setCart] = useState(existingCartItems); // Initialize with existing items
@@ -79,6 +87,34 @@ const ProductSelectionScreen = ({ route, navigation }) => {
       );
     } finally {
       setLoading(false);
+    }
+  };
+
+  const syncProducts = async () => {
+    try {
+      setRefreshing(true);
+      const result = await productService.syncProductsFromServer();
+      
+      if (result.success) {
+        // Reload products from database after successful sync
+        const productsData = await dbHelper.getAllProducts();
+        const activeProducts = productsData.filter(p => p.is_active === 1);
+        setProducts(activeProducts);
+        
+        // Extract unique categories
+        const uniqueCategories = ['All', ...new Set(activeProducts.map(p => p.category).filter(Boolean))];
+        setCategories(uniqueCategories);
+        
+        setFilteredProducts(activeProducts);
+        
+        Alert.alert('Success', result.message);
+      } else {
+        Alert.alert('Sync Failed', result.message);
+      }
+    } catch (error) {
+      Alert.alert('Sync Error', 'Failed to sync products from server. Please check your internet connection and try again.');
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -198,7 +234,7 @@ const ProductSelectionScreen = ({ route, navigation }) => {
             <Text style={styles.priceLabel}>Unit Price:</Text>
             <Text style={styles.priceValue}>{formatCurrency(item.unit_price)}</Text>
           </View>
-          {item.carton_price > 0 && (
+          {!isSalesman && item.carton_price > 0 && (
             <View style={styles.priceRow}>
               <Text style={styles.priceLabel}>Carton Price:</Text>
               <Text style={styles.priceValue}>{formatCurrency(item.carton_price)}</Text>
@@ -283,6 +319,17 @@ const ProductSelectionScreen = ({ route, navigation }) => {
           <Text style={styles.headerTitle}>Select Products</Text>
           <Text style={styles.headerSubtitle}>{shopName}</Text>
         </View>
+        <TouchableOpacity
+          style={styles.syncButton}
+          onPress={syncProducts}
+          disabled={refreshing}
+        >
+          <Ionicons 
+            name={refreshing ? "sync" : "cloud-download-outline"} 
+            size={24} 
+            color="#FFFFFF" 
+          />
+        </TouchableOpacity>
       </View>
 
       {/* Search Bar */}
@@ -318,6 +365,14 @@ const ProductSelectionScreen = ({ route, navigation }) => {
         renderItem={renderProductCard}
         keyExtractor={(item) => item.id.toString()}
         contentContainerStyle={styles.productsList}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={syncProducts}
+            colors={['#3B82F6']}
+            tintColor="#3B82F6"
+          />
+        }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Ionicons name="cube" size={64} color="#D1D5DB" />
@@ -388,6 +443,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#DBEAFE',
     marginTop: 2,
+  },
+  syncButton: {
+    padding: 8,
+    marginLeft: 12,
   },
   searchContainer: {
     flexDirection: 'row',

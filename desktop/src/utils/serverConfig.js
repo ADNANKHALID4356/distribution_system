@@ -3,17 +3,26 @@
 
 const SERVER_CONFIG_KEY = 'serverConfig';
 const CONFIG_VERSION_KEY = 'serverConfigVersion';
-const CURRENT_CONFIG_VERSION = 2; // Increment this to force reset old configs
+const CURRENT_CONFIG_VERSION = 7; // Increment this to force reset old configs
 
 // Default configuration
 // IMPORTANT: Update this before building for production distribution
 // Option 1: Set your production server here for all clients
 // Option 2: Leave as localhost and let users configure on first launch
+
+// Production server (VPS) - ACTIVE:
 const DEFAULT_CONFIG = {
   host: '147.93.108.205',  // VPS Production Server
   port: '5001',            // Backend API port
-  protocol: 'http'         // HTTP (use 'https' if SSL is configured)
+  protocol: 'http'         // HTTP
 };
+
+// Local Development Server - uncomment for local testing:
+// const DEFAULT_CONFIG = {
+//   host: 'localhost',       // Local Development Server
+//   port: '5000',            // Backend API port
+//   protocol: 'http'         // HTTP (use 'https' if SSL is configured)
+// };
 
 // Production example (uncomment and update for production builds):
 // const DEFAULT_CONFIG = {

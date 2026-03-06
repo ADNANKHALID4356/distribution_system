@@ -15,7 +15,7 @@ class OrderService {
   /**
    * Calculate order totals
    */
-  calculateOrderTotals(items, discountPercentage = 0) {
+  calculateOrderTotals(items, discountAmount = 0) {
     let subtotal = 0;
     
     // Calculate subtotal from items
@@ -23,16 +23,16 @@ class OrderService {
       subtotal += item.total_price;
     });
     
-    // Calculate discount
-    const discountAmount = (subtotal * discountPercentage) / 100;
+    // Parse discount as a fixed price amount
+    const discount = parseFloat(discountAmount) || 0;
     
     // Calculate total
-    const totalAmount = subtotal - discountAmount;
+    const totalAmount = subtotal - discount;
     
     return {
       subtotal: parseFloat(subtotal.toFixed(2)),
-      discount_percentage: parseFloat(discountPercentage.toFixed(2)),
-      discount_amount: parseFloat(discountAmount.toFixed(2)),
+      discount_percentage: 0, // Not used anymore, kept for compatibility
+      discount_amount: parseFloat(discount.toFixed(2)),
       tax_amount: 0, // No tax for now
       total_amount: parseFloat(totalAmount.toFixed(2))
     };
@@ -106,10 +106,10 @@ class OrderService {
   /**
    * Update order with items and totals
    */
-  async updateOrderWithItems(orderId, items, discountPercentage = 0, notes = '') {
+  async updateOrderWithItems(orderId, items, discountAmount = 0, notes = '') {
     try {
       // Calculate totals
-      const totals = this.calculateOrderTotals(items, discountPercentage);
+      const totals = this.calculateOrderTotals(items, discountAmount);
       
       // Update order totals
       await dbHelper.updateOrderTotals(orderId, totals);

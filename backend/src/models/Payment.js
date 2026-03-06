@@ -118,21 +118,22 @@ class Payment {
       let description = '';
       
       if (transactionType === 'receive') {
-        // Receive from shop: Shop pays us
-        // - If shop has debt (negative balance): Reduces debt (balance moves toward zero)
-        // - If shop has no debt: Adds to their credit/prepaid balance
-        // In both cases: DEBIT increases balance
+        // Receive from shop: Shop pays us - REDUCES their debt
+        // In debt tracking: Positive balance = shop owes us
+        // Payment received = shop's debt DECREASES
+        // Formula: newBalance = previousBalance + credit - debit
+        // For receive: debit = amount, credit = 0, so newBalance = previous - amount
         debitAmount = amount;
         creditAmount = 0;
-        newBalance = previousBalance + amount;
+        newBalance = previousBalance - amount;
         description = `Payment received from shop - ${receipt_number}`;
       } else {
-        // Pay to shop: We pay/refund shop
-        // - Reduces their balance or creates debt
-        // CREDIT decreases balance
+        // Pay to shop: We pay/refund shop - INCREASES their balance (they now have credit)
+        // Or if they had negative balance (credit), it moves toward zero
+        // For pay: debit = 0, credit = amount, so newBalance = previous + amount
         debitAmount = 0;
         creditAmount = amount;
-        newBalance = previousBalance - amount;
+        newBalance = previousBalance + amount;
         description = `Payment made to shop - ${receipt_number}`;
       }
       

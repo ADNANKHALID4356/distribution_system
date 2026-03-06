@@ -96,6 +96,10 @@ const OrderManagementPage = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editFormData, setEditFormData] = useState(null);
 
+  // Notification states
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
   // Fetch data on mount and filter changes
   useEffect(() => {
     fetchOrders();
@@ -133,7 +137,8 @@ const OrderManagementPage = () => {
       } else {
         console.error('❌ [FRONTEND] API returned success: false');
         const errorMsg = response.message || 'Unknown error';
-        alert(`Failed to fetch orders: ${errorMsg}`);
+        setError(`Failed to fetch orders: ${errorMsg}`);
+        setTimeout(() => setError(''), 5000);
       }
     } catch (error) {
       console.error('❌ [FRONTEND] Error fetching orders:', error);
@@ -161,7 +166,8 @@ const OrderManagementPage = () => {
         errorMsg = error.response?.data?.message || error.message || 'Failed to fetch orders';
       }
       
-      alert(`Failed to fetch orders:\n\n${errorMsg}\n\nCheck browser console for details.`);
+      setError(`Failed to fetch orders: ${errorMsg}. Check browser console for details.`);
+      setTimeout(() => setError(''), 8000);
     } finally {
       setLoading(false);
     }
@@ -226,10 +232,12 @@ const OrderManagementPage = () => {
   const handleExport = async () => {
     try {
       await orderService.exportToExcel(orders);
-      alert('Orders exported successfully!');
+      setSuccess('Orders exported successfully!');
+      setTimeout(() => setSuccess(''), 5000);
     } catch (error) {
       console.error('Error exporting orders:', error);
-      alert('Failed to export orders');
+      setError('Failed to export orders');
+      setTimeout(() => setError(''), 5000);
     }
   };
 
@@ -245,7 +253,8 @@ const OrderManagementPage = () => {
       }
     } catch (error) {
       console.error('Error fetching order details:', error);
-      alert('Failed to fetch order details');
+      setError('Failed to fetch order details');
+      setTimeout(() => setError(''), 5000);
     }
   };
 
@@ -258,7 +267,8 @@ const OrderManagementPage = () => {
       const response = await orderService.updateOrderStatus(orderId, newStatus, `Status changed to ${newStatus}`);
       
       if (response.success) {
-        alert('Order status updated successfully!');
+        setSuccess('Order status updated successfully!');
+        setTimeout(() => setSuccess(''), 5000);
         fetchOrders();
         fetchStatistics();
       }
@@ -269,13 +279,15 @@ const OrderManagementPage = () => {
       const errorMsg = error.response?.data?.message || error.message || 'Failed to update order status';
       
       if (errorMsg.toLowerCase().includes('insufficient stock')) {
-        alert(
-          'Cannot Finalize Order - Insufficient Stock\n\n' +
-          errorMsg + '\n\n' +
+        setError(
+          'Cannot Finalize Order - Insufficient Stock: ' +
+          errorMsg + ' ' +
           'Please check stock levels or adjust order quantities before finalizing.'
         );
+        setTimeout(() => setError(''), 8000);
       } else {
-        alert('Error: ' + errorMsg);
+        setError('Error: ' + errorMsg);
+        setTimeout(() => setError(''), 5000);
       }
     }
   };
@@ -306,9 +318,18 @@ const OrderManagementPage = () => {
       if (response.success) {
         const order = response.data;
         
+        console.log('📦 Loading order for edit:', {
+          order_number: order.order_number,
+          total_amount: order.total_amount,
+          discount: order.discount,
+          net_amount: order.net_amount,
+          items_count: order.items?.length
+        });
+        
         // Check if order can be edited
         if (['finalized', 'delivered'].includes(order.status)) {
-          alert('Cannot edit finalized or delivered orders');
+          setError('Cannot edit finalized or delivered orders');
+          setTimeout(() => setError(''), 5000);
           return;
         }
         
@@ -317,6 +338,9 @@ const OrderManagementPage = () => {
           shop_id: order.shop_id,
           route_id: order.route_id,
           notes: order.notes || '',
+          total_amount: order.total_amount || 0,
+          discount: order.discount || 0,
+          net_amount: order.net_amount || 0,
           items: order.items.map(item => ({
             id: item.id,
             product_id: item.product_id,
@@ -324,7 +348,7 @@ const OrderManagementPage = () => {
             quantity: item.quantity,
             unit_price: item.unit_price,
             discount: item.discount || 0,
-            total_price: item.total_price,
+            total_price: item.total_price || (item.quantity * item.unit_price),
             net_price: item.net_price
           }))
         });
@@ -332,7 +356,8 @@ const OrderManagementPage = () => {
       }
     } catch (error) {
       console.error('Error loading order for edit:', error);
-      alert('Failed to load order details');
+      setError('Failed to load order details');
+      setTimeout(() => setError(''), 5000);
     }
   };
 
@@ -372,7 +397,8 @@ const OrderManagementPage = () => {
   const handleRemoveItem = (index) => {
     const newItems = editFormData.items.filter((_, i) => i !== index);
     if (newItems.length === 0) {
-      alert('Order must have at least one item');
+      setError('Order must have at least one item');
+      setTimeout(() => setError(''), 5000);
       return;
     }
     setEditFormData(prev => ({ ...prev, items: newItems }));
@@ -384,16 +410,8 @@ const OrderManagementPage = () => {
   const handleDeleteOrder = async (orderId, orderNumber, status) => {
     // Frontend validation (backend also checks)
     if (['finalized', 'delivered'].includes(status)) {
-      alert('❌ Cannot delete finalized or delivered orders');
-      return;
-    }
-
-    // Warning for approved orders
-    const confirmMessage = status === 'approved'
-      ? `⚠️ WARNING: This approved order may have downstream processes (invoices, deliveries).\n\nAre you sure you want to delete Order #${orderNumber}?\n\nThis action cannot be undone.`
-      : `Are you sure you want to delete Order #${orderNumber}?\n\nThis action cannot be undone.`;
-
-    if (!window.confirm(confirmMessage)) {
+      setError('Cannot delete finalized or delivered orders');
+      setTimeout(() => setError(''), 5000);
       return;
     }
 
@@ -403,7 +421,8 @@ const OrderManagementPage = () => {
       const response = await orderService.deleteOrder(orderId);
       
       if (response.success) {
-        alert(`✓ Order #${orderNumber} deleted successfully`);
+        setSuccess(`Order #${orderNumber} deleted successfully${status === 'placed' ? ' (stock restored)' : ''}`);
+        setTimeout(() => setSuccess(''), 5000);
         
         // Close detail modal if it was open for this order
         if (selectedOrder?.id === orderId) {
@@ -425,20 +444,24 @@ const OrderManagementPage = () => {
     } catch (error) {
       console.error('Delete order error:', error);
       const errorMessage = error.response?.data?.message || error.message || 'Failed to delete order';
-      alert(`❌ Error: ${errorMessage}`);
+      setError(errorMessage);
+      setTimeout(() => setError(''), 5000);
     } finally {
       setLoading(false);
     }
   };
 
   /**
-   * Calculate order totals
+   * Calculate order totals - use order-level values from loaded order
    */
   const calculateTotals = () => {
-    const total_amount = editFormData.items.reduce((sum, item) => sum + item.total_price, 0);
-    const discount = editFormData.items.reduce((sum, item) => sum + (item.discount || 0), 0);
-    const net_amount = total_amount - discount;
-    return { total_amount, discount, net_amount };
+    const totals = {
+      total_amount: parseFloat(editFormData.total_amount) || 0,
+      discount: parseFloat(editFormData.discount) || 0,
+      net_amount: parseFloat(editFormData.net_amount) || 0
+    };
+    console.log('💰 Edit Order Totals:', totals);
+    return totals;
   };
 
   /**
@@ -447,7 +470,8 @@ const OrderManagementPage = () => {
   const handleSaveEdit = async () => {
     try {
       if (!editFormData.items || editFormData.items.length === 0) {
-        alert('Order must have at least one item');
+        setError('Order must have at least one item');
+        setTimeout(() => setError(''), 5000);
         return;
       }
 
@@ -466,7 +490,8 @@ const OrderManagementPage = () => {
       const response = await orderService.updateOrder(editingOrder.id, updateData);
       
       if (response.success) {
-        alert('Order updated successfully!');
+        setSuccess('Order updated successfully!');
+        setTimeout(() => setSuccess(''), 5000);
         setShowEditModal(false);
         setEditingOrder(null);
         setEditFormData(null);
@@ -475,7 +500,8 @@ const OrderManagementPage = () => {
       }
     } catch (error) {
       console.error('Error updating order:', error);
-      alert('Failed to update order: ' + (error.response?.data?.message || error.message));
+      setError('Failed to update order: ' + (error.response?.data?.message || error.message));
+      setTimeout(() => setError(''), 5000);
     }
   };
 
@@ -608,6 +634,22 @@ const OrderManagementPage = () => {
         </h1>
         <p className="text-gray-600 mt-1">Manage, process, and track all orders</p>
       </div>
+
+      {/* Error Alert */}
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 flex justify-between items-center">
+          <span>{error}</span>
+          <button onClick={() => setError('')} className="text-red-700 hover:text-red-900 font-bold">&times;</button>
+        </div>
+      )}
+
+      {/* Success Alert */}
+      {success && (
+        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4 flex justify-between items-center">
+          <span>{success}</span>
+          <button onClick={() => setSuccess('')} className="text-green-700 hover:text-green-900 font-bold">&times;</button>
+        </div>
+      )}
 
       {/* Statistics Cards */}
       {stats && (
@@ -1092,15 +1134,28 @@ const OrderManagementPage = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
-                    {selectedOrder.items && selectedOrder.items.map((item, index) => (
-                      <tr key={index}>
-                        <td className="px-4 py-2 text-sm text-gray-900">{item.product_name}</td>
-                        <td className="px-4 py-2 text-sm text-gray-900">{item.quantity}</td>
-                        <td className="px-4 py-2 text-sm text-gray-900">{orderService.formatCurrency(item.unit_price)}</td>
-                        <td className="px-4 py-2 text-sm text-gray-900">{orderService.formatCurrency(item.discount)}</td>
-                        <td className="px-4 py-2 text-sm font-medium text-gray-900">{orderService.formatCurrency(item.net_price)}</td>
-                      </tr>
-                    ))}
+                    {selectedOrder.items && selectedOrder.items.map((item, index) => {
+                      // Calculate net_price if not provided
+                      const netPrice = item.net_price || (item.total_price - (item.discount || 0));
+                      return (
+                        <tr key={index}>
+                          <td className="px-4 py-2 text-sm text-gray-900">{item.product_name}</td>
+                          <td className="px-4 py-2 text-sm text-gray-900">{item.quantity}</td>
+                          <td className="px-4 py-2 text-sm text-gray-900">{orderService.formatCurrency(item.unit_price)}</td>
+                          <td className="px-4 py-2 text-sm text-gray-900">
+                            {parseFloat(item.discount || 0) > 0 ? (
+                              <span className="text-red-600">
+                                {orderService.formatCurrency(item.discount)}
+                                {parseFloat(item.discount_percentage || 0) > 0 && (
+                                  <span className="text-xs text-red-400 ml-1">({parseFloat(item.discount_percentage).toFixed(1)}%)</span>
+                                )}
+                              </span>
+                            ) : '-'}
+                          </td>
+                          <td className="px-4 py-2 text-sm font-medium text-gray-900">{orderService.formatCurrency(netPrice)}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1255,53 +1310,57 @@ const OrderManagementPage = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
-                      {editFormData.items.map((item, index) => (
-                        <tr key={index}>
-                          <td className="px-4 py-3 text-sm text-gray-900">{item.product_name}</td>
-                          <td className="px-4 py-3 text-sm text-gray-900">
-                            {orderService.formatCurrency(item.unit_price)}
-                          </td>
-                          <td className="px-4 py-3">
-                            <input
-                              type="number"
-                              min="1"
-                              value={item.quantity}
-                              onChange={(e) => handleItemQuantityChange(index, parseInt(e.target.value) || 1)}
-                              className="w-20 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-900">
-                            {orderService.formatCurrency(item.total_price)}
-                          </td>
-                          <td className="px-4 py-3">
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={item.discount}
-                              onChange={(e) => handleItemDiscountChange(index, parseFloat(e.target.value) || 0)}
-                              className="w-24 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                          </td>
-                          <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                            {orderService.formatCurrency(item.net_price)}
-                          </td>
-                          <td className="px-4 py-3">
-                            {editFormData.items.length > 1 && (
-                              <button
-                                onClick={() => handleRemoveItem(index)}
-                                className="text-red-600 hover:text-red-800"
-                                title="Remove Item"
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                  <polyline points="3 6 5 6 21 6"></polyline>
-                                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                                </svg>
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
+                      {editFormData.items.map((item, index) => {
+                        // Calculate net_price if not provided
+                        const netPrice = item.net_price || (item.total_price - (item.discount || 0));
+                        return (
+                          <tr key={index}>
+                            <td className="px-4 py-3 text-sm text-gray-900">{item.product_name}</td>
+                            <td className="px-4 py-3 text-sm text-gray-900">
+                              {orderService.formatCurrency(item.unit_price)}
+                            </td>
+                            <td className="px-4 py-3">
+                              <input
+                                type="number"
+                                min="1"
+                                value={item.quantity}
+                                onChange={(e) => handleItemQuantityChange(index, parseInt(e.target.value) || 1)}
+                                className="w-20 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              />
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-900">
+                              {orderService.formatCurrency(item.total_price)}
+                            </td>
+                            <td className="px-4 py-3">
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={item.discount}
+                                onChange={(e) => handleItemDiscountChange(index, parseFloat(e.target.value) || 0)}
+                                className="w-24 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              />
+                            </td>
+                            <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                              {orderService.formatCurrency(netPrice)}
+                            </td>
+                            <td className="px-4 py-3">
+                              {editFormData.items.length > 1 && (
+                                <button
+                                  onClick={() => handleRemoveItem(index)}
+                                  className="text-red-600 hover:text-red-800"
+                                  title="Remove Item"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <polyline points="3 6 5 6 21 6"></polyline>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                  </svg>
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

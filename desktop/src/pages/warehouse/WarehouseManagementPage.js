@@ -321,37 +321,18 @@ const WarehouseManagementPage = () => {
 
       // Check if there's stock (can be force deleted)
       if (deps.stock.products > 0 && deps.stock.totalQuantity > 0) {
-        const stockInfo = `This warehouse contains:\n` +
-          `  • ${deps.stock.products} product(s)\n` +
-          `  • Total quantity: ${deps.stock.totalQuantity} units\n\n` +
-          `Deleting this warehouse will permanently remove all stock records.\n\n` +
-          `Are you sure you want to proceed?`;
+        const stockInfo = `This warehouse contains ${deps.stock.products} product(s) with ${deps.stock.totalQuantity} units. Deleting will remove all stock records.`;
         
-        if (window.confirm(`⚠️ WARNING: "${name}" has stock!\n\n${stockInfo}`)) {
-          try {
-            await warehouseService.deleteWarehouse(id, true);
-            setMessage({ type: 'success', text: 'Warehouse and its stock records deleted successfully!' });
-            fetchWarehouses();
-            setTimeout(() => setMessage({ type: '', text: '' }), 3000);
-          } catch (forceError) {
-            console.error('❌ Force delete error:', forceError);
-            const forceErrorData = forceError.response?.data;
-            setMessage({ 
-              type: 'error', 
-              text: forceErrorData?.details?.message || forceErrorData?.message || 'Failed to delete warehouse' 
-            });
-          }
-        }
+        setMessage({ type: 'error', text: stockInfo });
+        setTimeout(() => setMessage({ type: '', text: '' }), 8000);
         return;
       }
 
       // No dependencies, safe to delete
-      if (window.confirm(`Are you sure you want to delete warehouse "${name}"?`)) {
-        await warehouseService.deleteWarehouse(id, false);
-        setMessage({ type: 'success', text: 'Warehouse deleted successfully!' });
-        fetchWarehouses();
-        setTimeout(() => setMessage({ type: '', text: '' }), 3000);
-      }
+    await warehouseService.deleteWarehouse(id, false);
+      setMessage({ type: 'success', text: 'Warehouse deleted successfully!' });
+      fetchWarehouses();
+      setTimeout(() => setMessage({ type: '', text: '' }), 3000);
     } catch (error) {
       console.error('❌ Delete Error:', error);
       const errorData = error.response?.data;

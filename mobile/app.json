@@ -2,7 +2,6 @@
   "expo": {
     "name": "Distribution System",
     "slug": "distribution-system",
-    "owner": "taha_1038",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -24,7 +23,6 @@
         "ACCESS_NETWORK_STATE",
         "ACCESS_WIFI_STATE"
       ],
-      "usesCleartextTraffic": true,
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
@@ -45,6 +43,14 @@
             "backgroundColor": "#000000"
           }
         }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
       ]
     ],
     "experiments": {
@@ -56,6 +62,7 @@
       "eas": {
         "projectId": "96bdadd4-73ee-40b2-87d9-771d342d048c"
       }
-    }
+    },
+    "owner": "taha_1038"
   }
 }

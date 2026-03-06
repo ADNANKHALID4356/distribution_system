@@ -3,6 +3,10 @@
 
 const db = require('../config/database');
 
+// Database type detection
+const useSQLite = process.env.USE_SQLITE === 'true';
+console.log(`📊 Delivery Model: Using ${useSQLite ? 'SQLite' : 'MySQL'} database (USE_SQLITE=${process.env.USE_SQLITE})`);
+
 class Delivery {
   /**
    * Generate unique challan number
@@ -666,6 +670,303 @@ class Delivery {
     } catch (error) {
       console.error('❌ Error deleting delivery:', error);
       throw error;
+    }
+  }
+
+  /**
+   * 🆕 Create delivery challan directly from an ORDER (NEW FLOW - NO INVOICE)
+   * This is the new simplified flow: Order → Delivery Challan → Shop Ledger
+   * @param {Number} orderId - Order ID to create delivery from
+   * @param {Object} deliveryData - Delivery specific data (driver, vehicle, warehouse, etc.)
+   * @param {Number} userId - User creating the delivery
+   * @returns {Promise<Object>} Created delivery with all details
+   */
+  static async createFromOrder(orderId, deliveryData, userId) {
+    const connection = await db.getConnection();
+    
+    try {
+      await connection.beginTransaction();
+
+      console.log('\n🟢 ========== DELIVERY MODEL: CREATE FROM ORDER ==========');
+      console.log('📥 Order ID:', orderId);
+      console.log('📥 Delivery Data:', JSON.stringify(deliveryData, null, 2));
+
+      // 1. Fetch complete order details with joins (shop, salesman, route, items)
+      console.log('🔍 Fetching complete order details with joins...');
+      
+      // Detect which database table name to use for order details
+      const useSQLite = process.env.USE_SQLITE === 'true';
+      const ORDER_DETAILS_TABLE = useSQLite ? 'order_items' : 'order_details';
+      
+      const [orders] = await connection.query(`
+        SELECT 
+          o.*,
+          s.full_name as salesman_name,
+          s.phone as salesman_phone,
+          s.salesman_code,
+          sh.shop_name,
+          sh.owner_name as shop_owner_name,
+          sh.address as shop_address,
+          sh.city as shop_city,
+          sh.area as shop_area,
+          sh.phone as shop_phone,
+          sh.current_balance as shop_balance,
+          r.route_name,
+          r.route_code
+        FROM orders o
+        LEFT JOIN salesmen s ON o.salesman_id = s.id
+        LEFT JOIN shops sh ON o.shop_id = sh.id
+        LEFT JOIN routes r ON o.route_id = r.id
+        WHERE o.id = ?
+      `, [orderId]);
+
+      if (orders.length === 0) {
+        throw new Error('Order not found');
+      }
+
+      const order = orders[0];
+      console.log('✅ Order details fetched:', order.order_number);
+      console.log('   - Shop:', order.shop_name);
+      console.log('   - Salesman:', order.salesman_name);
+      console.log('   - Route:', order.route_name);
+      console.log('   - Status:', order.status);
+      console.log('   - Total Amount:', order.net_amount);
+
+      // 2. Validate order status (must be approved or finalized)
+      if (order.status !== 'approved' && order.status !== 'finalized') {
+        throw new Error(`Order must be approved or finalized to create delivery. Current status: ${order.status}`);
+      }
+
+      // 3. Fetch order items with product details
+      console.log(`🔍 Fetching order items from ${ORDER_DETAILS_TABLE}...`);
+      const [orderItems] = await connection.query(`
+        SELECT 
+          od.id,
+          od.product_id,
+          od.quantity,
+          od.unit_price,
+          od.total_price,
+          od.discount_percentage,
+          (od.unit_price * od.quantity * od.discount_percentage / 100) as discount_amount,
+          od.total_price as net_price,
+          p.product_name,
+          p.product_code,
+          p.category,
+          p.brand,
+          p.pack_size
+        FROM ${ORDER_DETAILS_TABLE} od
+        LEFT JOIN products p ON od.product_id = p.id
+        WHERE od.order_id = ?
+        ORDER BY od.id
+      `, [orderId]);
+
+      if (orderItems.length === 0) {
+        throw new Error('Order has no items');
+      }
+
+      console.log(`✅ Fetched ${orderItems.length} order items`);
+
+      // 4. Generate challan number
+      const challanNumber = await this.generateChallanNumber();
+      console.log('📋 Generated challan number:', challanNumber);
+
+      // 5. Calculate totals from order items
+      const totalItems = orderItems.length;
+      const totalQuantity = orderItems.reduce((sum, item) => 
+        sum + parseFloat(item.quantity || 0), 0
+      );
+      
+      // Use order's total amounts (preserves discounts from order)
+      // MySQL uses 'discount', SQLite uses 'discount_amount'
+      const subtotal = parseFloat(order.total_amount) || 0;
+      const discountAmount = parseFloat(order.discount_amount || order.discount) || 0;
+      const discountPercentage = subtotal > 0 ? (discountAmount / subtotal) * 100 : 0;
+      const netAmount = parseFloat(order.net_amount) || subtotal - discountAmount;
+
+      console.log('📊 Calculated totals:');
+      console.log('   - Total Items:', totalItems);
+      console.log('   - Total Quantity:', totalQuantity);
+      console.log('   - Subtotal:', subtotal);
+      console.log('   - Discount:', discountAmount, `(${discountPercentage.toFixed(2)}%)`);
+      console.log('   - Net Amount:', netAmount);
+
+      // 6. Insert delivery challan
+      console.log('📦 Inserting delivery challan...');
+      const [result] = await connection.query(`
+        INSERT INTO deliveries (
+          challan_number, 
+          order_id,
+          invoice_id,
+          warehouse_id,
+          delivery_date, 
+          expected_delivery_time,
+          driver_name, 
+          driver_phone, 
+          driver_cnic, 
+          vehicle_number, 
+          vehicle_type,
+          shop_id, 
+          shop_name, 
+          shop_address, 
+          shop_contact, 
+          delivery_address,
+          route_id, 
+          route_name, 
+          salesman_id, 
+          salesman_name,
+          status, 
+          total_items, 
+          total_quantity, 
+          total_amount,
+          subtotal, 
+          discount_percentage,
+          discount_amount, 
+          grand_total,
+          notes, 
+          created_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        challanNumber,
+        orderId,
+        null, // invoice_id is NULL for order-based deliveries
+        deliveryData.warehouse_id,
+        deliveryData.delivery_date || new Date(),
+        deliveryData.expected_delivery_time || null,
+        deliveryData.driver_name || null,
+        deliveryData.driver_phone || null,
+        deliveryData.driver_cnic || null,
+        deliveryData.vehicle_number || null,
+        deliveryData.vehicle_type || null,
+        order.shop_id,
+        order.shop_name || null,
+        order.shop_address || null,
+        order.shop_phone || null,
+        deliveryData.delivery_address || order.shop_address || null,
+        order.route_id,
+        order.route_name || null,
+        order.salesman_id,
+        order.salesman_name || null,
+        'pending',
+        totalItems,
+        totalQuantity,
+        netAmount,
+        subtotal,
+        discountPercentage,
+        discountAmount,
+        netAmount, // grand_total = net_amount for order-based deliveries
+        deliveryData.notes || null,
+        userId
+      ]);
+
+      const deliveryId = result.insertId;
+      console.log('✅ Delivery inserted with ID:', deliveryId);
+
+      // 7. Insert delivery items from order items
+      console.log('📦 Inserting delivery items...');
+      for (let i = 0; i < orderItems.length; i++) {
+        const item = orderItems[i];
+        console.log(`\n   🔹 Item ${i + 1}: ${item.product_name}`);
+        console.log(`      - Quantity: ${item.quantity}`);
+        console.log(`      - Unit Price: ${item.unit_price}`);
+        console.log(`      - Total: ${item.total_price}`);
+        
+        await connection.query(`
+          INSERT INTO delivery_items (
+            delivery_id, 
+            product_id, 
+            product_name, 
+            product_code,
+            quantity_ordered, 
+            quantity_delivered, 
+            quantity_returned,
+            unit_price, 
+            total_price,
+            discount_percentage,
+            discount_amount,
+            net_amount
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          deliveryId,
+          item.product_id,
+          item.product_name,
+          item.product_code || null,
+          item.quantity,
+          item.quantity, // Initially, quantity_delivered = quantity_ordered
+          0, // quantity_returned = 0
+          item.unit_price,
+          item.total_price,
+          item.discount_percentage || 0,
+          item.discount_amount || 0,
+          item.net_price || item.total_price
+        ]);
+
+        // 8. Reserve stock in warehouse
+        console.log(`      ✅ Reserving stock in warehouse ${deliveryData.warehouse_id}`);
+        await connection.query(`
+          UPDATE warehouse_stock 
+          SET reserved_quantity = reserved_quantity + ?
+          WHERE warehouse_id = ? AND product_id = ?
+        `, [item.quantity, deliveryData.warehouse_id, item.product_id]);
+      }
+
+      console.log('✅ All delivery items inserted and stock reserved');
+
+      // 9. Update order delivery status
+      console.log('🔄 Updating order delivery status...');
+      if (useSQLite) {
+        // SQLite: Update delivery_generated and delivery_status columns
+        await connection.query(`
+          UPDATE orders 
+          SET delivery_generated = 1,
+              delivery_status = 'delivered'
+          WHERE id = ?
+        `, [orderId]);
+      } else {
+        // MySQL: Update status field only (no delivery_generated/delivery_status columns)
+        await connection.query(`
+          UPDATE orders 
+          SET status = 'delivered'
+          WHERE id = ?
+        `, [orderId]);
+      }
+      console.log('✅ Order delivery status updated');
+
+      // 10. Create shop ledger entry (NEW - directly from delivery)
+      console.log('📒 Creating shop ledger entry from delivery...');
+      const shopLedger = require('./ShopLedger');
+      
+      await shopLedger.createEntry({
+        shop_id: order.shop_id,
+        shop_name: order.shop_name,
+        transaction_date: new Date(),
+        transaction_type: 'invoice', // Use 'invoice' type as delivery creates receivable
+        reference_type: 'delivery',
+        reference_id: deliveryId,
+        reference_number: challanNumber,
+        debit_amount: 0,
+        credit_amount: netAmount, // Credit adds to balance (shop owes more money after delivery)
+        description: `Delivery Challan ${challanNumber} for Order ${order.order_number}`,
+        notes: `Generated from order ${order.order_number}`,
+        created_by: userId,
+        is_manual: 0
+      }, connection);
+      console.log('✅ Shop ledger entry created');
+
+      await connection.commit();
+      console.log('✅ Transaction committed');
+      
+      // 11. Fetch and return complete delivery
+      const createdDelivery = await this.getById(deliveryId);
+      console.log('✅ Delivery retrieved:', createdDelivery.challan_number);
+      console.log('🟢 ========== DELIVERY FROM ORDER COMPLETE ==========\n');
+      
+      return createdDelivery;
+    } catch (error) {
+      await connection.rollback();
+      console.error('❌ Error creating delivery from order:', error);
+      throw error;
+    } finally {
+      connection.release();
     }
   }
 
