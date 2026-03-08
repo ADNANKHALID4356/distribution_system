@@ -167,7 +167,6 @@ const DeliveryTrackingPage = () => {
     }
     
     try {
-      // Create a print window with the modal content
       const printWindow = window.open('', '_blank');
       
       if (!printWindow) {
@@ -175,6 +174,13 @@ const DeliveryTrackingPage = () => {
         setTimeout(() => setError(''), 5000);
         return;
       }
+
+      // Calculate effective discount
+      const sub = parseFloat(selectedDelivery.subtotal || 0);
+      const gt = parseFloat(selectedDelivery.grand_total || selectedDelivery.total_amount || 0);
+      const storedDiscount = parseFloat(selectedDelivery.discount_amount || 0);
+      const effectiveDiscount = storedDiscount > 0 ? storedDiscount : (sub > gt ? sub - gt : 0);
+      const effectiveDiscountPct = sub > 0 && effectiveDiscount > 0 ? (effectiveDiscount / sub * 100) : 0;
       
       printWindow.document.write(`
       <!DOCTYPE html>
@@ -183,393 +189,363 @@ const DeliveryTrackingPage = () => {
           <title>Delivery Challan - ${selectedDelivery.challan_number}</title>
           <meta charset="utf-8">
           <style>
-            * {
-              margin: 0;
-              padding: 0;
-              box-sizing: border-box;
-            }
+            * { margin: 0; padding: 0; box-sizing: border-box; }
             
             @page {
-              size: 80mm auto;
-              margin: 0;
+              size: A4;
+              margin: 15mm 15mm 15mm 15mm;
             }
             
             body {
-              font-family: 'Courier New', monospace;
-              width: 80mm;
+              font-family: 'Segoe UI', Arial, sans-serif;
+              width: 210mm;
+              min-height: 297mm;
               margin: 0 auto;
-              padding: 5mm;
+              padding: 15mm;
               background: white;
-              color: black;
-              font-size: 10pt;
-              line-height: 1.4;
+              color: #1a1a1a;
+              font-size: 11pt;
+              line-height: 1.5;
             }
             
-            /* Header Styles */
-            .company-header {
-              text-align: center;
-              border-top: 2px solid black;
-              border-bottom: 2px solid black;
-              padding: 8px 0;
-              margin-bottom: 10px;
+            .header {
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-start;
+              border-bottom: 3px solid #1e40af;
+              padding-bottom: 15px;
+              margin-bottom: 20px;
             }
-            
+            .header-left { flex: 1; }
             .company-name {
-              font-size: 14pt;
-              font-weight: bold;
-              text-transform: uppercase;
+              font-size: 22pt;
+              font-weight: 700;
+              color: #1e40af;
               margin-bottom: 4px;
             }
-            
             .company-details {
               font-size: 9pt;
-              line-height: 1.3;
+              color: #555;
+              line-height: 1.5;
             }
-            
+            .header-right {
+              text-align: right;
+            }
             .doc-title {
-              text-align: center;
-              font-size: 12pt;
-              font-weight: bold;
-              margin: 10px 0;
-              padding: 5px 0;
-              border-top: 1px dashed black;
-              border-bottom: 1px dashed black;
-            }
-            
-            /* Section Styles */
-            .section {
-              margin-bottom: 10px;
-              padding-bottom: 8px;
-              border-bottom: 1px dashed black;
-            }
-            
-            .section-title {
-              font-weight: bold;
-              font-size: 10pt;
+              font-size: 18pt;
+              font-weight: 700;
+              color: #1e40af;
               margin-bottom: 5px;
+            }
+            .challan-number {
+              font-size: 12pt;
+              font-weight: 600;
+              color: #333;
+            }
+            .challan-date {
+              font-size: 10pt;
+              color: #666;
+              margin-top: 3px;
+            }
+            .status-badge {
+              display: inline-block;
+              padding: 3px 12px;
+              border-radius: 12px;
+              font-size: 9pt;
+              font-weight: 600;
               text-transform: uppercase;
+              margin-top: 5px;
+              background: #dcfce7;
+              color: #166534;
             }
             
+            .info-grid {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 15px;
+              margin-bottom: 20px;
+            }
+            .info-box {
+              border: 1px solid #e5e7eb;
+              border-radius: 6px;
+              padding: 12px 15px;
+            }
+            .info-box-title {
+              font-size: 9pt;
+              font-weight: 700;
+              text-transform: uppercase;
+              color: #1e40af;
+              margin-bottom: 8px;
+              padding-bottom: 5px;
+              border-bottom: 1px solid #e5e7eb;
+            }
             .info-row {
               display: flex;
               justify-content: space-between;
               padding: 2px 0;
-              font-size: 9pt;
+              font-size: 10pt;
             }
-            
             .info-label {
-              font-weight: bold;
-              min-width: 35%;
+              font-weight: 600;
+              color: #555;
+              min-width: 40%;
             }
-            
             .info-value {
               text-align: right;
-              flex: 1;
-              word-wrap: break-word;
+              color: #1a1a1a;
             }
             
-            /* Items Table */
-            .items-section {
-              margin: 10px 0;
+            .items-table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-bottom: 20px;
+              font-size: 10pt;
             }
-            
-            .item {
-              margin-bottom: 8px;
-              padding-bottom: 5px;
-              border-bottom: 1px dotted black;
-            }
-            
-            .item-header {
-              font-weight: bold;
-              margin-bottom: 3px;
-            }
-            
-            .item-details {
+            .items-table thead th {
+              background: #1e40af;
+              color: white;
+              padding: 8px 10px;
+              text-align: left;
+              font-weight: 600;
               font-size: 9pt;
-              padding-left: 10px;
+              text-transform: uppercase;
+            }
+            .items-table thead th.right { text-align: right; }
+            .items-table tbody td {
+              padding: 7px 10px;
+              border-bottom: 1px solid #e5e7eb;
+            }
+            .items-table tbody td.right { text-align: right; }
+            .items-table tbody td.discount { text-align: right; color: #dc2626; }
+            .items-table tbody tr:nth-child(even) { background: #f8fafc; }
+            .items-table tfoot td {
+              padding: 8px 10px;
+              font-weight: 700;
+              border-top: 2px solid #1e40af;
             }
             
-            .item-row {
-              display: flex;
-              justify-content: space-between;
-              padding: 1px 0;
-            }
-            
-            /* Financial Summary */
             .financial-section {
-              margin: 10px 0;
-              padding: 8px 0;
-              border-top: 1px solid black;
-              border-bottom: 2px solid black;
+              width: 55%;
+              margin-left: auto;
+              margin-bottom: 25px;
             }
-            
-            .financial-row {
+            .fin-row {
               display: flex;
               justify-content: space-between;
-              padding: 3px 0;
-              font-size: 9pt;
+              padding: 5px 10px;
+              font-size: 10pt;
+            }
+            .fin-row.border { border-bottom: 1px solid #e5e7eb; }
+            .fin-row.discount { color: #dc2626; }
+            .fin-row.total {
+              background: #1e40af;
+              color: white;
+              font-weight: 700;
+              font-size: 13pt;
+              padding: 10px 15px;
+              border-radius: 5px;
+              margin-top: 8px;
             }
             
-            .financial-row.total {
-              font-weight: bold;
-              font-size: 11pt;
-              margin-top: 5px;
-              padding-top: 5px;
-              border-top: 1px solid black;
-            }
-            
-            /* Signatures */
-            .signatures-section {
-              margin-top: 15px;
-              padding-top: 10px;
-              border-top: 1px solid black;
-            }
-            
-            .signature-grid {
+            .signatures {
               display: grid;
-              grid-template-columns: 1fr 1fr;
-              gap: 15px;
-              margin-top: 10px;
+              grid-template-columns: 1fr 1fr 1fr 1fr;
+              gap: 20px;
+              margin-top: 40px;
+              padding-top: 15px;
+              border-top: 1px solid #e5e7eb;
             }
-            
-            .signature-box {
-              text-align: center;
-              padding: 5px 0;
+            .sig-box { text-align: center; }
+            .sig-line {
+              border-bottom: 1px solid #333;
+              height: 50px;
+              margin-bottom: 5px;
             }
+            .sig-label { font-size: 9pt; font-weight: 600; color: #333; }
+            .sig-role { font-size: 8pt; color: #888; }
             
-            .signature-line {
-              border-top: 1px solid black;
-              margin: 25px 5px 5px 5px;
-            }
-            
-            .signature-label {
-              font-size: 8pt;
-              font-weight: bold;
-            }
-            
-            .signature-role {
-              font-size: 7pt;
-            }
-            
-            /* Footer */
             .footer {
               text-align: center;
-              margin-top: 15px;
+              margin-top: 30px;
               padding-top: 10px;
-              border-top: 2px solid black;
-              font-size: 8pt;
+              border-top: 2px solid #1e40af;
+              font-size: 9pt;
+              color: #888;
             }
             
-            /* Print Styles */
             @media print {
-              body {
-                width: 80mm;
-              }
-              .no-print {
-                display: none;
-              }
+              body { width: auto; padding: 0; min-height: auto; }
+              .no-print { display: none; }
             }
           </style>
         </head>
         <body>
           
-          <!-- Company Header -->
-          <div class="company-header">
-            <div class="company-name">${companySettings?.company_name || 'COMPANY NAME'}</div>
-            <div class="company-details">
-              ${companySettings?.company_address || 'Address'}<br>
-              Tel: ${companySettings?.company_phone || 'N/A'}<br>
-              ${companySettings?.company_email || 'email@company.com'}
-            </div>
-          </div>
-          
-          <!-- Document Title -->
-          <div class="doc-title">DELIVERY CHALLAN</div>
-          
-          <!-- Challan Info -->
-          <div class="section">
-            <div class="section-title">Challan Information</div>
-            <div class="info-row">
-              <span class="info-label">Challan No:</span>
-              <span class="info-value">${selectedDelivery.challan_number}</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">Date:</span>
-              <span class="info-value">${new Date(selectedDelivery.delivery_date).toLocaleDateString()}</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">Status:</span>
-              <span class="info-value">${selectedDelivery.status.toUpperCase()}</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">Warehouse:</span>
-              <span class="info-value">${selectedDelivery.warehouse_name}</span>
-            </div>
-            ${selectedDelivery.invoice_id ? `
-            <div class="info-row">
-              <span class="info-label">Invoice ID:</span>
-              <span class="info-value">#${selectedDelivery.invoice_id}</span>
-            </div>
-            ` : ''}
-          </div>
-          
-          <!-- Customer Details -->
-          <div class="section">
-            <div class="section-title">Customer Details</div>
-            <div class="info-row">
-              <span class="info-label">Shop:</span>
-              <span class="info-value">${selectedDelivery.shop_name}</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">Address:</span>
-              <span class="info-value">${selectedDelivery.shop_address || 'N/A'}</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">Contact:</span>
-              <span class="info-value">${selectedDelivery.shop_contact}</span>
-            </div>
-            ${selectedDelivery.salesman_name ? `
-            <div class="info-row">
-              <span class="info-label">Salesman:</span>
-              <span class="info-value">${selectedDelivery.salesman_name}</span>
-            </div>
-            ` : ''}
-          </div>
-          
-          <!-- Delivery Info -->
-          <div class="section">
-            <div class="section-title">Delivery Information</div>
-            <div class="info-row">
-              <span class="info-label">Driver:</span>
-              <span class="info-value">${selectedDelivery.driver_name}</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">Phone:</span>
-              <span class="info-value">${selectedDelivery.driver_phone}</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">Vehicle:</span>
-              <span class="info-value">${selectedDelivery.vehicle_number} (${selectedDelivery.vehicle_type})</span>
-            </div>
-            ${selectedDelivery.driver_cnic ? `
-            <div class="info-row">
-              <span class="info-label">CNIC:</span>
-              <span class="info-value">${selectedDelivery.driver_cnic}</span>
-            </div>
-            ` : ''}
-          </div>
-          
-          <!-- Items -->
-          <div class="items-section">
-            <div class="section-title">ITEMS (${(selectedDelivery.items || []).length})</div>
-            ${(selectedDelivery.items || []).map((item, index) => `
-              <div class="item">
-                <div class="item-header">${index + 1}. ${item.product_name}</div>
-                <div class="item-details">
-                  <div class="item-row">
-                    <span>Code: ${item.product_code || 'N/A'}</span>
-                  </div>
-                  <div class="item-row">
-                    <span>Qty: ${parseFloat(item.quantity_delivered || item.quantity_ordered || 0).toFixed(2)}</span>
-                    <span>@ Rs. ${parseFloat(item.unit_price || 0).toFixed(2)}</span>
-                  </div>
-                  <div class="item-row">
-                    <span>Total:</span>
-                    <span><strong>Rs. ${parseFloat(item.total_price || 0).toFixed(2)}</strong></span>
-                  </div>
-                </div>
+          <!-- Header -->
+          <div class="header">
+            <div class="header-left">
+              <div class="company-name">${companySettings?.company_name || 'COMPANY NAME'}</div>
+              <div class="company-details">
+                ${companySettings?.company_address || 'Address'}<br>
+                Tel: ${companySettings?.company_phone || 'N/A'} | Email: ${companySettings?.company_email || 'N/A'}
               </div>
-            `).join('')}
+            </div>
+            <div class="header-right">
+              <div class="doc-title">DELIVERY CHALLAN</div>
+              <div class="challan-number">${selectedDelivery.challan_number}</div>
+              <div class="challan-date">Date: ${new Date(selectedDelivery.delivery_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+              <div class="status-badge">${selectedDelivery.status.replace('_', ' ')}</div>
+            </div>
           </div>
+          
+          <!-- Info Grid -->
+          <div class="info-grid">
+            <div class="info-box">
+              <div class="info-box-title">Customer Details</div>
+              <div class="info-row"><span class="info-label">Shop:</span><span class="info-value">${selectedDelivery.shop_name}</span></div>
+              <div class="info-row"><span class="info-label">Address:</span><span class="info-value">${selectedDelivery.shop_address || 'N/A'}</span></div>
+              <div class="info-row"><span class="info-label">Contact:</span><span class="info-value">${selectedDelivery.shop_contact || 'N/A'}</span></div>
+              ${selectedDelivery.salesman_name ? `<div class="info-row"><span class="info-label">Salesman:</span><span class="info-value">${selectedDelivery.salesman_name}</span></div>` : ''}
+              ${selectedDelivery.route_name ? `<div class="info-row"><span class="info-label">Route:</span><span class="info-value">${selectedDelivery.route_name}</span></div>` : ''}
+            </div>
+            <div class="info-box">
+              <div class="info-box-title">Delivery Details</div>
+              <div class="info-row"><span class="info-label">Driver:</span><span class="info-value">${selectedDelivery.driver_name || 'N/A'}</span></div>
+              <div class="info-row"><span class="info-label">Phone:</span><span class="info-value">${selectedDelivery.driver_phone || 'N/A'}</span></div>
+              <div class="info-row"><span class="info-label">Vehicle:</span><span class="info-value">${selectedDelivery.vehicle_number || 'N/A'} ${selectedDelivery.vehicle_type ? '(' + selectedDelivery.vehicle_type + ')' : ''}</span></div>
+              ${selectedDelivery.driver_cnic ? `<div class="info-row"><span class="info-label">CNIC:</span><span class="info-value">${selectedDelivery.driver_cnic}</span></div>` : ''}
+              <div class="info-row"><span class="info-label">Warehouse:</span><span class="info-value">${selectedDelivery.warehouse_name || 'N/A'}</span></div>
+            </div>
+          </div>
+          
+          <!-- Items Table -->
+          <table class="items-table">
+            <thead>
+              <tr>
+                <th style="width:30px">#</th>
+                <th>Product</th>
+                <th style="width:60px">Code</th>
+                <th class="right" style="width:60px">Qty</th>
+                <th class="right" style="width:80px">Unit Price</th>
+                <th class="right" style="width:80px">Discount</th>
+                <th class="right" style="width:90px">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(selectedDelivery.items || []).map((item, index) => {
+                const qty = parseFloat(item.quantity_delivered || item.quantity_ordered || 0);
+                const price = parseFloat(item.unit_price || 0);
+                const grossTotal = qty * price;
+                const itemTotal = parseFloat(item.total_price || 0);
+                const itemDiscountAmt = parseFloat(item.discount_amount || 0);
+                const itemDiscountPct = parseFloat(item.discount_percentage || 0);
+                const effectiveItemDiscount = itemDiscountAmt > 0 ? itemDiscountAmt : (grossTotal > itemTotal ? grossTotal - itemTotal : 0);
+                const effectiveItemDiscountPct = itemDiscountPct > 0 ? itemDiscountPct : (grossTotal > 0 && effectiveItemDiscount > 0 ? (effectiveItemDiscount / grossTotal * 100) : 0);
+                return `
+              <tr>
+                <td>${index + 1}</td>
+                <td>${item.product_name}</td>
+                <td>${item.product_code || '-'}</td>
+                <td class="right">${qty}</td>
+                <td class="right">Rs. ${price.toFixed(2)}</td>
+                <td class="discount">${effectiveItemDiscount > 0 ? '- Rs. ' + effectiveItemDiscount.toFixed(2) + ' (' + effectiveItemDiscountPct.toFixed(1) + '%)' : '-'}</td>
+                <td class="right"><strong>Rs. ${itemTotal.toFixed(2)}</strong></td>
+              </tr>`;
+              }).join('')}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="3" style="text-align:right">Total Items: ${(selectedDelivery.items || []).length}</td>
+                <td class="right">${parseFloat(selectedDelivery.total_quantity || 0)}</td>
+                <td colspan="2"></td>
+                <td class="right">Rs. ${sub.toFixed(2)}</td>
+              </tr>
+            </tfoot>
+          </table>
           
           <!-- Financial Summary -->
           <div class="financial-section">
-            <div class="financial-row">
-              <span>Subtotal:</span>
-              <span>Rs. ${parseFloat(selectedDelivery.subtotal || 0).toFixed(2)}</span>
+            <div class="fin-row border">
+              <span>Items Subtotal:</span>
+              <span>Rs. ${sub.toFixed(2)}</span>
             </div>
-            ${parseFloat(selectedDelivery.discount_amount || 0) > 0 ? `
-            <div class="financial-row">
-              <span>Discount (${parseFloat(selectedDelivery.discount_percentage || 0).toFixed(1)}%):</span>
-              <span>- Rs. ${parseFloat(selectedDelivery.discount_amount || 0).toFixed(2)}</span>
+            ${effectiveDiscount > 0 ? `
+            <div class="fin-row border discount">
+              <span>Discount (${effectiveDiscountPct.toFixed(2)}%):</span>
+              <span>- Rs. ${effectiveDiscount.toFixed(2)}</span>
             </div>
             ` : ''}
             ${parseFloat(selectedDelivery.tax_amount || 0) > 0 ? `
-            <div class="financial-row">
+            <div class="fin-row border">
               <span>Tax (${parseFloat(selectedDelivery.tax_percentage || 0).toFixed(1)}%):</span>
               <span>+ Rs. ${parseFloat(selectedDelivery.tax_amount || 0).toFixed(2)}</span>
             </div>
             ` : ''}
             ${parseFloat(selectedDelivery.shipping_charges || 0) > 0 ? `
-            <div class="financial-row">
-              <span>Shipping:</span>
+            <div class="fin-row border">
+              <span>Shipping Charges:</span>
               <span>+ Rs. ${parseFloat(selectedDelivery.shipping_charges || 0).toFixed(2)}</span>
             </div>
             ` : ''}
             ${parseFloat(selectedDelivery.other_charges || 0) > 0 ? `
-            <div class="financial-row">
+            <div class="fin-row border">
               <span>Other Charges:</span>
               <span>+ Rs. ${parseFloat(selectedDelivery.other_charges || 0).toFixed(2)}</span>
             </div>
             ` : ''}
             ${parseFloat(selectedDelivery.round_off || 0) !== 0 ? `
-            <div class="financial-row">
+            <div class="fin-row border">
               <span>Round Off:</span>
               <span>Rs. ${parseFloat(selectedDelivery.round_off || 0).toFixed(2)}</span>
             </div>
             ` : ''}
-            <div class="financial-row total">
+            <div class="fin-row total">
               <span>GRAND TOTAL:</span>
-              <span>Rs. ${parseFloat(selectedDelivery.grand_total || selectedDelivery.total_amount || 0).toFixed(2)}</span>
+              <span>Rs. ${gt.toFixed(2)}</span>
             </div>
           </div>
           
+          ${selectedDelivery.notes ? `
+          <div style="margin-bottom: 15px; padding: 8px 12px; background: #f8fafc; border-left: 3px solid #1e40af; font-size: 10pt;">
+            <strong>Notes:</strong> ${selectedDelivery.notes}
+          </div>
+          ` : ''}
+          
           <!-- Signatures -->
-          <div class="signatures-section">
-            <div class="section-title">Authorized Signatures</div>
-            <div class="signature-grid">
-              <div class="signature-box">
-                <div class="signature-line"></div>
-                <div class="signature-label">Prepared By</div>
-                <div class="signature-role">(Warehouse)</div>
-              </div>
-              <div class="signature-box">
-                <div class="signature-line"></div>
-                <div class="signature-label">Dispatched By</div>
-                <div class="signature-role">(Manager)</div>
-              </div>
-              <div class="signature-box">
-                <div class="signature-line"></div>
-                <div class="signature-label">Received By</div>
-                <div class="signature-role">(Driver)</div>
-              </div>
-              <div class="signature-box">
-                <div class="signature-line"></div>
-                <div class="signature-label">Customer</div>
-                <div class="signature-role">(Sign & Stamp)</div>
-              </div>
+          <div class="signatures">
+            <div class="sig-box">
+              <div class="sig-line"></div>
+              <div class="sig-label">Prepared By</div>
+              <div class="sig-role">Warehouse Staff</div>
+            </div>
+            <div class="sig-box">
+              <div class="sig-line"></div>
+              <div class="sig-label">Dispatched By</div>
+              <div class="sig-role">Manager</div>
+            </div>
+            <div class="sig-box">
+              <div class="sig-line"></div>
+              <div class="sig-label">Received By</div>
+              <div class="sig-role">Driver</div>
+            </div>
+            <div class="sig-box">
+              <div class="sig-line"></div>
+              <div class="sig-label">Customer</div>
+              <div class="sig-role">Sign & Stamp</div>
             </div>
           </div>
           
           <!-- Footer -->
           <div class="footer">
             <div>Thank you for your business!</div>
-            <div style="margin-top: 5px; font-size: 7pt;">
-              Generated: ${new Date().toLocaleString('en-GB', { 
-                day: '2-digit', 
-                month: '2-digit', 
-                year: 'numeric', 
-                hour: '2-digit', 
-                minute: '2-digit' 
-              })}
+            <div style="margin-top: 3px;">
+              Generated: ${new Date().toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
             </div>
           </div>
 
           <script>
             window.onload = function() {
-              setTimeout(function() {
-                window.print();
-              }, 500);
+              setTimeout(function() { window.print(); }, 500);
             };
           </script>
         </body>
@@ -1250,6 +1226,13 @@ const DeliveryTrackingPage = () => {
               </div>
 
               {/* Financial Summary - Comprehensive Breakdown */}
+              {(() => {
+                const sub = parseFloat(selectedDelivery.subtotal || 0);
+                const gt = parseFloat(selectedDelivery.grand_total || selectedDelivery.total_amount || 0);
+                const storedDiscount = parseFloat(selectedDelivery.discount_amount || 0);
+                const effectiveDiscount = storedDiscount > 0 ? storedDiscount : (sub > gt ? sub - gt : 0);
+                const effectiveDiscountPct = sub > 0 && effectiveDiscount > 0 ? (effectiveDiscount / sub * 100) : 0;
+                return (
               <div className="mb-6 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-6 border-2 border-blue-200">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
                   <FileText className="h-5 w-5 text-blue-600" />
@@ -1261,17 +1244,17 @@ const DeliveryTrackingPage = () => {
                   <div className="flex justify-between items-center py-2 border-b border-blue-200">
                     <span className="text-sm font-medium text-gray-700">Items Subtotal:</span>
                     <span className="text-sm font-semibold text-gray-900">
-                      Rs. {parseFloat(selectedDelivery.subtotal || 0).toFixed(2)}
+                      Rs. {sub.toFixed(2)}
                     </span>
                   </div>
 
                   {/* Discount */}
                   <div className="flex justify-between items-center py-2 border-b border-blue-200">
                     <span className="text-sm font-medium text-gray-700">
-                      Discount ({parseFloat(selectedDelivery.discount_percentage || 0).toFixed(2)}%):
+                      Discount ({effectiveDiscountPct.toFixed(2)}%):
                     </span>
-                    <span className={`text-sm font-semibold ${parseFloat(selectedDelivery.discount_amount || 0) > 0 ? 'text-red-600' : 'text-gray-400'}`}>
-                      - Rs. {parseFloat(selectedDelivery.discount_amount || 0).toFixed(2)}
+                    <span className={`text-sm font-semibold ${effectiveDiscount > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                      - Rs. {effectiveDiscount.toFixed(2)}
                     </span>
                   </div>
 
@@ -1322,6 +1305,8 @@ const DeliveryTrackingPage = () => {
                   </p>
                 </div>
               </div>
+                );
+              })()}
 
               {selectedDelivery.notes && (
                 <div className="mb-6">

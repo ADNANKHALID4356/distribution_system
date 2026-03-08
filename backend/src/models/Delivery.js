@@ -826,18 +826,21 @@ class Delivery {
       );
       
       // Use order's total amounts (preserves discounts from order)
-      // MySQL uses 'discount', SQLite uses 'discount_amount'
+      // Calculate discount from difference between total_amount and net_amount (most reliable)
       const subtotal = parseFloat(order.total_amount) || 0;
-      const discountAmount = parseFloat(order.discount_amount || order.discount) || 0;
-      const discountPercentage = subtotal > 0 ? (discountAmount / subtotal) * 100 : 0;
-      const netAmount = parseFloat(order.net_amount) || subtotal - discountAmount;
+      const netAmount = parseFloat(order.net_amount) || subtotal;
+      const calculatedDiscount = subtotal > netAmount ? subtotal - netAmount : 0;
+      const explicitDiscount = parseFloat(order.discount_amount) || parseFloat(order.discount) || 0;
+      const discountAmount = Math.max(calculatedDiscount, explicitDiscount);
+      const discountPercentage = subtotal > 0 && discountAmount > 0 ? (discountAmount / subtotal) * 100 : 0;
+      const finalNetAmount = subtotal - discountAmount;
 
       console.log('📊 Calculated totals:');
       console.log('   - Total Items:', totalItems);
       console.log('   - Total Quantity:', totalQuantity);
       console.log('   - Subtotal:', subtotal);
       console.log('   - Discount:', discountAmount, `(${discountPercentage.toFixed(2)}%)`);
-      console.log('   - Net Amount:', netAmount);
+      console.log('   - Net Amount:', finalNetAmount);
 
       // 6. Insert delivery challan
       console.log('📦 Inserting delivery challan...');
@@ -898,11 +901,11 @@ class Delivery {
         'pending',
         totalItems,
         totalQuantity,
-        netAmount,
+        finalNetAmount,
         subtotal,
         discountPercentage,
         discountAmount,
-        netAmount, // grand_total = net_amount for order-based deliveries
+        finalNetAmount, // grand_total = net_amount for order-based deliveries
         deliveryData.notes || null,
         userId
       ]);
@@ -993,7 +996,7 @@ class Delivery {
         reference_id: deliveryId,
         reference_number: challanNumber,
         debit_amount: 0,
-        credit_amount: netAmount, // Credit adds to balance (shop owes more money after delivery)
+        credit_amount: finalNetAmount, // Credit adds to balance (shop owes more money after delivery)
         description: `Delivery Challan ${challanNumber} for Order ${order.order_number}`,
         notes: `Generated from order ${order.order_number}`,
         created_by: userId,
