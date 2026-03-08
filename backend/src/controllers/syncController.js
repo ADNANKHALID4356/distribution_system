@@ -162,7 +162,8 @@ exports.syncOrders = async (req, res) => {
           // Delete existing items
           await connection.query(`DELETE FROM ${orderDetailsTable} WHERE order_id = ?`, [orderId]);
         } else {
-          // CRITICAL: Validate stock availability BEFORE creating order
+          // Log stock levels for visibility (but do NOT block order creation)
+          // Mobile sync should always accept orders - stock validation happens at fulfillment
           if (items && items.length > 0) {
             for (const item of items) {
               const [stockCheck] = await connection.query(
@@ -175,17 +176,13 @@ exports.syncOrders = async (req, res) => {
               }
               
               const product = stockCheck[0];
-              // Handle null reserved_stock (common in SQLite)
               const reservedStock = parseFloat(product.reserved_stock) || 0;
               const availableStock = product.stock_quantity - reservedStock;
               
               console.log(`   📦 Stock check for ${product.product_name}: stock=${product.stock_quantity}, reserved=${reservedStock}, available=${availableStock}, needed=${item.quantity}`);
               
               if (availableStock < item.quantity) {
-                throw new Error(
-                  `Insufficient stock for ${product.product_name}. ` +
-                  `Available: ${availableStock}, Required: ${item.quantity}`
-                );
+                console.warn(`   ⚠️ Low/insufficient stock for ${product.product_name}: Available ${availableStock}, Required ${item.quantity} - order will still be accepted`);
               }
             }
           }
