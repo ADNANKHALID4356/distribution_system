@@ -477,44 +477,94 @@ class Delivery {
       const updates = ['status = ?'];
       const params = [status];
 
+      // Accept both field name conventions from frontend
+      const receivedBy = updateData.received_by;
+      const deliveryTime = updateData.actual_delivery_time || updateData.delivered_date;
+      const remarks = updateData.remarks || updateData.notes;
+
       if (status === 'delivered') {
-        updates.push('received_at = NOW()');
+        const useSQLite = process.env.USE_SQLITE === 'true';
+        updates.push(useSQLite ? "received_at = datetime('now')" : 'received_at = NOW()');
         
-        if (updateData.received_by) {
+        if (receivedBy) {
           updates.push('received_by = ?');
-          params.push(updateData.received_by);
+          params.push(receivedBy);
         }
 
-        if (updateData.actual_delivery_time) {
+        if (deliveryTime) {
           updates.push('actual_delivery_time = ?');
-          params.push(updateData.actual_delivery_time);
+          params.push(deliveryTime);
         }
 
-        // Release reserved stock and reduce actual stock
-        const [items] = await db.query(
-          'SELECT * FROM delivery_items WHERE delivery_id = ?',
-          [id]
-        );
-
+        // Get delivery details to check if it was created from an order
         const [delivery] = await db.query(
-          'SELECT warehouse_id FROM deliveries WHERE id = ?',
+          'SELECT warehouse_id, order_id FROM deliveries WHERE id = ?',
           [id]
         );
 
         if (delivery.length > 0) {
-          for (const item of items) {
-            await db.query(`
-              UPDATE warehouse_stock 
-              SET 
-                quantity = quantity - ?,
-                reserved_quantity = reserved_quantity - ?
-              WHERE warehouse_id = ? AND product_id = ?
-            `, [
-              item.quantity_delivered,
-              item.quantity_delivered,
-              delivery[0].warehouse_id,
-              item.product_id
-            ]);
+          const [items] = await db.query(
+            'SELECT * FROM delivery_items WHERE delivery_id = ?',
+            [id]
+          );
+
+          if (delivery[0].order_id) {
+            // Delivery was created from an order — stock was already deducted
+            // at order creation time. Only release the warehouse reservation.
+            for (const item of items) {
+              await db.query(`
+                UPDATE warehouse_stock 
+                SET reserved_quantity = CASE 
+                  WHEN reserved_quantity >= ? THEN reserved_quantity - ?
+                  ELSE 0
+                END
+                WHERE warehouse_id = ? AND product_id = ?
+              `, [
+                item.quantity_delivered,
+                item.quantity_delivered,
+                delivery[0].warehouse_id,
+                item.product_id
+              ]);
+            }
+          } else {
+            // Independent delivery (no order) — deduct stock now
+            for (const item of items) {
+              await db.query(`
+                UPDATE warehouse_stock 
+                SET 
+                  quantity = CASE 
+                    WHEN quantity >= ? THEN quantity - ?
+                    ELSE 0
+                  END,
+                  reserved_quantity = CASE 
+                    WHEN reserved_quantity >= ? THEN reserved_quantity - ?
+                    ELSE 0
+                  END
+                WHERE warehouse_id = ? AND product_id = ?
+              `, [
+                item.quantity_delivered,
+                item.quantity_delivered,
+                item.quantity_delivered,
+                item.quantity_delivered,
+                delivery[0].warehouse_id,
+                item.product_id
+              ]);
+
+              // Also deduct from global product stock for independent deliveries
+              await db.query(
+                'UPDATE products SET stock_quantity = CASE WHEN stock_quantity >= ? THEN stock_quantity - ? ELSE 0 END WHERE id = ?',
+                [item.quantity_delivered, item.quantity_delivered, item.product_id]
+              );
+            }
+          }
+
+          // Update the associated order status to 'delivered' if applicable
+          if (delivery[0].order_id) {
+            await db.query(
+              'UPDATE orders SET status = ? WHERE id = ?',
+              ['delivered', delivery[0].order_id]
+            );
+            console.log(`✅ Order ${delivery[0].order_id} status updated to delivered`);
           }
         }
       } else if (status === 'cancelled' || status === 'returned') {
@@ -533,9 +583,13 @@ class Delivery {
           for (const item of items) {
             await db.query(`
               UPDATE warehouse_stock 
-              SET reserved_quantity = reserved_quantity - ?
+              SET reserved_quantity = CASE 
+                WHEN reserved_quantity >= ? THEN reserved_quantity - ?
+                ELSE 0
+              END
               WHERE warehouse_id = ? AND product_id = ?
             `, [
+              item.quantity_delivered,
               item.quantity_delivered,
               delivery[0].warehouse_id,
               item.product_id
@@ -544,9 +598,9 @@ class Delivery {
         }
       }
 
-      if (updateData.remarks) {
+      if (remarks) {
         updates.push('remarks = ?');
-        params.push(updateData.remarks);
+        params.push(remarks);
       }
 
       params.push(id);

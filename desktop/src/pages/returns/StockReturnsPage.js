@@ -16,22 +16,22 @@ import {
 
 const StockReturnsPage = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('list'); // 'list' or 'process'
+  const [activeTab, setActiveTab] = useState('process'); // 'list' or 'process'
   const [returns, setReturns] = useState([]);
   const [statistics, setStatistics] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  // Process return state
-  const [deliveries, setDeliveries] = useState([]);
-  const [selectedDeliveryId, setSelectedDeliveryId] = useState('');
+  // Process return state - search by challan
+  const [challanSearch, setChallanSearch] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [selectedDelivery, setSelectedDelivery] = useState(null);
   const [returnItems, setReturnItems] = useState([]);
   const [returnReason, setReturnReason] = useState('');
   const [returnNotes, setReturnNotes] = useState('');
   const [processing, setProcessing] = useState(false);
-  const [loadingDeliveries, setLoadingDeliveries] = useState(false);
 
   // View details state
   const [selectedReturn, setSelectedReturn] = useState(null);
@@ -61,36 +61,46 @@ const StockReturnsPage = () => {
     }
   }, [dateFilter]);
 
-  const fetchDeliveries = useCallback(async () => {
-    setLoadingDeliveries(true);
-    try {
-      const response = await deliveryService.getAllDeliveries({ status: 'delivered' });
-      setDeliveries(response.data || []);
-    } catch (err) {
-      console.error('Failed to fetch deliveries:', err);
-    } finally {
-      setLoadingDeliveries(false);
-    }
-  }, []);
-
   useEffect(() => {
-    fetchReturns();
-  }, [fetchReturns]);
-
-  useEffect(() => {
-    if (activeTab === 'process') {
-      fetchDeliveries();
+    if (activeTab === 'list') {
+      fetchReturns();
     }
-  }, [activeTab, fetchDeliveries]);
+  }, [activeTab, fetchReturns]);
 
-  const handleDeliverySelect = async (deliveryId) => {
-    setSelectedDeliveryId(deliveryId);
+  // Search deliveries by challan number
+  const handleChallanSearch = async () => {
+    if (!challanSearch.trim()) {
+      setError('Please enter a Challan Number or Order ID to search');
+      return;
+    }
+
+    setSearchLoading(true);
+    setError('');
+    setSearchResults([]);
     setSelectedDelivery(null);
     setReturnItems([]);
 
-    if (!deliveryId) return;
-
     try {
+      const response = await deliveryService.getAllDeliveries({ search: challanSearch.trim() });
+      const results = (response.data || []);
+      setSearchResults(results);
+
+      if (results.length === 0) {
+        setError('No deliveries found matching that Challan Number / Order ID');
+      } else if (results.length === 1) {
+        // Auto-select if only one result
+        await loadDeliveryDetails(results[0].id);
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to search deliveries');
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  const loadDeliveryDetails = async (deliveryId) => {
+    try {
+      setLoading(true);
       const response = await deliveryService.getDeliveryById(deliveryId);
       const delivery = response.data;
       setSelectedDelivery(delivery);
@@ -111,6 +121,8 @@ const StockReturnsPage = () => {
       setReturnItems(items);
     } catch (err) {
       setError('Failed to load delivery details');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -152,31 +164,44 @@ const StockReturnsPage = () => {
 
     try {
       const returnData = {
-        delivery_id: parseInt(selectedDeliveryId),
+        delivery_id: selectedDelivery.id,
+        return_date: new Date().toISOString(),
         reason: returnReason,
         notes: returnNotes,
         items: itemsToReturn.map(item => ({
           delivery_item_id: item.delivery_item_id,
           product_id: item.product_id,
-          return_quantity: item.return_quantity,
+          quantity_returned: item.return_quantity,
+          return_amount: item.return_quantity * parseFloat(item.unit_price || 0),
           reason: item.reason || returnReason,
         })),
       };
 
       await stockReturnService.processReturn(returnData);
-      setSuccess('Stock return processed successfully!');
-      setActiveTab('list');
-      setSelectedDeliveryId('');
+      setSuccess('Stock return processed successfully! Stock has been updated.');
+      // Reset form
+      setChallanSearch('');
+      setSearchResults([]);
       setSelectedDelivery(null);
       setReturnItems([]);
       setReturnReason('');
       setReturnNotes('');
-      fetchReturns();
     } catch (err) {
       setError(err.message || 'Failed to process return');
     } finally {
       setProcessing(false);
     }
+  };
+
+  const handleReset = () => {
+    setChallanSearch('');
+    setSearchResults([]);
+    setSelectedDelivery(null);
+    setReturnItems([]);
+    setReturnReason('');
+    setReturnNotes('');
+    setError('');
+    setSuccess('');
   };
 
   const viewReturnDetails = async (returnId) => {
@@ -252,22 +277,18 @@ const StockReturnsPage = () => {
 
         {/* Statistics Cards */}
         {statistics && (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
             <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
               <p className="text-sm text-gray-500">Total Returns</p>
               <p className="text-2xl font-bold text-gray-800">{statistics.total_returns || 0}</p>
             </div>
             <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-              <p className="text-sm text-gray-500">Total Items Returned</p>
-              <p className="text-2xl font-bold text-orange-600">{statistics.total_items_returned || 0}</p>
+              <p className="text-sm text-gray-500">Total Qty Returned</p>
+              <p className="text-2xl font-bold text-orange-600">{statistics.total_quantity || 0}</p>
             </div>
             <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
               <p className="text-sm text-gray-500">Total Return Value</p>
-              <p className="text-2xl font-bold text-red-600">{formatCurrency(statistics.total_return_value)}</p>
-            </div>
-            <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-              <p className="text-sm text-gray-500">Unique Products</p>
-              <p className="text-2xl font-bold text-blue-600">{statistics.unique_products_returned || 0}</p>
+              <p className="text-2xl font-bold text-red-600">{formatCurrency(statistics.total_amount)}</p>
             </div>
           </div>
         )}
@@ -355,7 +376,7 @@ const StockReturnsPage = () => {
                           <td className="px-4 py-3 text-gray-800">{ret.shop_name || '-'}</td>
                           <td className="px-4 py-3 text-gray-600">{formatDate(ret.return_date)}</td>
                           <td className="px-4 py-3 text-right text-gray-600">{ret.total_items || 0}</td>
-                          <td className="px-4 py-3 text-right font-medium text-red-600">{formatCurrency(ret.total_return_value)}</td>
+                          <td className="px-4 py-3 text-right font-medium text-red-600">{formatCurrency(ret.total_return_amount)}</td>
                           <td className="px-4 py-3 text-gray-600 truncate max-w-[150px]">{ret.reason || '-'}</td>
                           <td className="px-4 py-3 text-center">
                             <div className="flex items-center justify-center gap-2">
@@ -384,8 +405,8 @@ const StockReturnsPage = () => {
                                     <div key={idx} className="flex justify-between items-center bg-white px-3 py-2 rounded-lg">
                                       <span className="text-gray-700">{item.product_name} ({item.product_code})</span>
                                       <div className="flex items-center gap-4">
-                                        <span className="text-gray-500">Qty: {item.return_quantity}</span>
-                                        <span className="text-red-600 font-medium">{formatCurrency(item.return_value)}</span>
+                                        <span className="text-gray-500">Qty: {item.quantity_returned}</span>
+                                        <span className="text-red-600 font-medium">{formatCurrency(item.return_amount)}</span>
                                       </div>
                                     </div>
                                   ))}
@@ -406,40 +427,105 @@ const StockReturnsPage = () => {
         {/* Process Tab */}
         {activeTab === 'process' && (
           <div className="space-y-6">
-            {/* Select Delivery */}
+            {/* Search by Challan Number */}
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-              <h3 className="text-lg font-bold text-gray-800 mb-4">Select Delivery</h3>
-              <select
-                value={selectedDeliveryId}
-                onChange={(e) => handleDeliverySelect(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500"
-                disabled={loadingDeliveries}
-              >
-                <option value="">-- Select a delivered challan --</option>
-                {deliveries.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.challan_number} - {d.shop_name} ({formatDate(d.delivery_date)}) - {formatCurrency(d.grand_total || d.total_amount)}
-                  </option>
-                ))}
-              </select>
+              <h3 className="text-lg font-bold text-gray-800 mb-4">Search Delivery by Challan No. / Order ID</h3>
+              <div className="flex gap-3">
+                <div className="relative flex-1">
+                  <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Enter Challan Number (e.g., DC-20260308-0001) or shop name..."
+                    value={challanSearch}
+                    onChange={(e) => setChallanSearch(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleChallanSearch()}
+                    className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-base"
+                  />
+                </div>
+                <button
+                  onClick={handleChallanSearch}
+                  disabled={searchLoading}
+                  className="px-6 py-3 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 disabled:opacity-50 flex items-center gap-2"
+                >
+                  {searchLoading ? (
+                    <ArrowPathIcon className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <MagnifyingGlassIcon className="h-5 w-5" />
+                  )}
+                  Search
+                </button>
+                {(selectedDelivery || searchResults.length > 0) && (
+                  <button
+                    onClick={handleReset}
+                    className="px-4 py-3 bg-gray-100 text-gray-600 font-medium rounded-lg hover:bg-gray-200"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+
+              {/* Search Results (if multiple) */}
+              {searchResults.length > 1 && !selectedDelivery && (
+                <div className="mt-4">
+                  <p className="text-sm text-gray-500 mb-2">Found {searchResults.length} deliveries — select one:</p>
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {searchResults.map((d) => (
+                      <button
+                        key={d.id}
+                        onClick={() => loadDeliveryDetails(d.id)}
+                        className="w-full text-left px-4 py-3 rounded-lg border border-gray-200 hover:bg-primary-50 hover:border-primary-300 transition-all flex justify-between items-center"
+                      >
+                        <div>
+                          <span className="font-semibold text-primary-700">{d.challan_number}</span>
+                          <span className="text-gray-500 mx-2">|</span>
+                          <span className="text-gray-700">{d.shop_name}</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm text-gray-500">{formatDate(d.delivery_date)}</span>
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                            d.status === 'delivered' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                          }`}>
+                            {d.status}
+                          </span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* Selected Delivery Info */}
+            {/* Selected Delivery Info & Return Form */}
             {selectedDelivery && (
               <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
                 <div className="flex justify-between items-start mb-4">
                   <div>
                     <h3 className="text-lg font-bold text-gray-800">Delivery: {selectedDelivery.challan_number}</h3>
                     <p className="text-sm text-gray-500">
-                      Shop: {selectedDelivery.shop_name} | Date: {formatDate(selectedDelivery.delivery_date)}
+                      Shop: <span className="font-medium text-gray-700">{selectedDelivery.shop_name}</span>
+                      {' | '}Date: {formatDate(selectedDelivery.delivery_date)}
+                      {selectedDelivery.route_name && <>{' | '}Route: {selectedDelivery.route_name}</>}
                     </p>
                   </div>
-                  <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
+                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                    selectedDelivery.status === 'delivered' ? 'bg-green-100 text-green-700' :
+                    selectedDelivery.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                    'bg-gray-100 text-gray-700'
+                  }`}>
                     {selectedDelivery.status}
                   </span>
                 </div>
 
-                {/* Return Items */}
+                {selectedDelivery.status !== 'delivered' && (
+                  <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                    <p className="text-amber-800 font-medium">
+                      This delivery has status "{selectedDelivery.status}". Returns can only be processed for deliveries with status "delivered".
+                      Please mark this delivery as "Delivered" first from the Delivery Tracking page.
+                    </p>
+                  </div>
+                )}
+
+                {/* Delivery Items Table */}
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead className="bg-gray-50">
@@ -447,9 +533,9 @@ const StockReturnsPage = () => {
                         <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">Product</th>
                         <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600">Delivered</th>
                         <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600">Already Returned</th>
-                        <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600">Max Returnable</th>
+                        <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600">Accepted</th>
                         <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600">Unit Price</th>
-                        <th className="px-3 py-2 text-center text-xs font-semibold text-gray-600">Return Qty</th>
+                        <th className="px-3 py-2 text-center text-xs font-semibold text-gray-600 bg-orange-50">Return Qty</th>
                         <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600">Return Value</th>
                         <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">Item Reason</th>
                       </tr>
@@ -459,21 +545,23 @@ const StockReturnsPage = () => {
                         <tr key={index} className={item.return_quantity > 0 ? 'bg-orange-50' : ''}>
                           <td className="px-3 py-2">
                             <span className="font-medium text-gray-800">{item.product_name}</span>
-                            <span className="text-xs text-gray-500 ml-1">({item.product_code})</span>
+                            {item.product_code && <span className="text-xs text-gray-500 ml-1">({item.product_code})</span>}
                           </td>
-                          <td className="px-3 py-2 text-right text-gray-600">{item.quantity_delivered}</td>
+                          <td className="px-3 py-2 text-right text-gray-600 font-medium">{item.quantity_delivered}</td>
                           <td className="px-3 py-2 text-right text-orange-600">{item.quantity_already_returned}</td>
-                          <td className="px-3 py-2 text-right text-green-600 font-medium">{item.max_returnable}</td>
+                          <td className="px-3 py-2 text-right text-green-600 font-medium">
+                            {item.quantity_delivered - item.quantity_already_returned - item.return_quantity}
+                          </td>
                           <td className="px-3 py-2 text-right text-gray-600">{formatCurrency(item.unit_price)}</td>
-                          <td className="px-3 py-2">
+                          <td className="px-3 py-2 bg-orange-50">
                             <input
                               type="number"
                               min="0"
                               max={item.max_returnable}
                               value={item.return_quantity}
                               onChange={(e) => updateReturnQuantity(index, e.target.value)}
-                              className="w-20 px-2 py-1.5 border border-gray-200 rounded-lg text-center focus:ring-2 focus:ring-primary-500"
-                              disabled={item.max_returnable <= 0}
+                              className="w-20 px-2 py-1.5 border border-orange-300 rounded-lg text-center focus:ring-2 focus:ring-orange-500 font-medium"
+                              disabled={item.max_returnable <= 0 || selectedDelivery.status !== 'delivered'}
                             />
                           </td>
                           <td className="px-3 py-2 text-right font-medium text-red-600">
@@ -486,6 +574,7 @@ const StockReturnsPage = () => {
                               onChange={(e) => updateReturnItemReason(index, e.target.value)}
                               placeholder="Optional"
                               className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+                              disabled={selectedDelivery.status !== 'delivered'}
                             />
                           </td>
                         </tr>
@@ -493,7 +582,10 @@ const StockReturnsPage = () => {
                     </tbody>
                     <tfoot className="bg-gray-50">
                       <tr>
-                        <td colSpan="6" className="px-3 py-3 text-right font-bold text-gray-700">Total Return Value:</td>
+                        <td colSpan="3" className="px-3 py-3 text-right text-sm text-gray-500">
+                          Items to return: {returnItems.filter(i => i.return_quantity > 0).length}
+                        </td>
+                        <td colSpan="3" className="px-3 py-3 text-right font-bold text-gray-700">Total Return Value:</td>
                         <td className="px-3 py-3 text-right font-bold text-red-600 text-lg">{formatCurrency(totalReturnValue)}</td>
                         <td></td>
                       </tr>
@@ -502,51 +594,56 @@ const StockReturnsPage = () => {
                 </div>
 
                 {/* Return Reason & Notes */}
-                <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Return Reason *</label>
-                    <select
-                      value={returnReason}
-                      onChange={(e) => setReturnReason(e.target.value)}
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500"
-                    >
-                      <option value="">Select reason</option>
-                      <option value="damaged">Damaged Goods</option>
-                      <option value="expired">Expired Products</option>
-                      <option value="wrong_product">Wrong Product</option>
-                      <option value="excess_quantity">Excess Quantity</option>
-                      <option value="quality_issue">Quality Issue</option>
-                      <option value="shop_closed">Shop Closed</option>
-                      <option value="other">Other</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-                    <input
-                      type="text"
-                      value={returnNotes}
-                      onChange={(e) => setReturnNotes(e.target.value)}
-                      placeholder="Additional notes..."
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500"
-                    />
-                  </div>
-                </div>
+                {selectedDelivery.status === 'delivered' && (
+                  <>
+                    <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Return Reason *</label>
+                        <select
+                          value={returnReason}
+                          onChange={(e) => setReturnReason(e.target.value)}
+                          className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500"
+                        >
+                          <option value="">Select reason</option>
+                          <option value="damaged">Damaged Goods</option>
+                          <option value="expired">Expired Products</option>
+                          <option value="wrong_product">Wrong Product</option>
+                          <option value="excess_quantity">Excess Quantity</option>
+                          <option value="quality_issue">Quality Issue</option>
+                          <option value="shop_closed">Shop Closed</option>
+                          <option value="partial_acceptance">Partial Acceptance</option>
+                          <option value="other">Other</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                        <input
+                          type="text"
+                          value={returnNotes}
+                          onChange={(e) => setReturnNotes(e.target.value)}
+                          placeholder="Additional notes..."
+                          className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500"
+                        />
+                      </div>
+                    </div>
 
-                {/* Submit Button */}
-                <div className="mt-6 flex justify-end">
-                  <button
-                    onClick={handleProcessReturn}
-                    disabled={processing || returnItems.filter(i => i.return_quantity > 0).length === 0}
-                    className="px-6 py-3 bg-gradient-to-r from-orange-500 to-red-500 text-white font-medium rounded-xl hover:from-orange-600 hover:to-red-600 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg transition-all flex items-center gap-2"
-                  >
-                    {processing ? (
-                      <ArrowPathIcon className="h-5 w-5 animate-spin" />
-                    ) : (
-                      <ArrowUturnLeftIcon className="h-5 w-5" />
-                    )}
-                    {processing ? 'Processing...' : 'Process Return'}
-                  </button>
-                </div>
+                    {/* Submit Button */}
+                    <div className="mt-6 flex justify-end">
+                      <button
+                        onClick={handleProcessReturn}
+                        disabled={processing || returnItems.filter(i => i.return_quantity > 0).length === 0}
+                        className="px-6 py-3 bg-gradient-to-r from-orange-500 to-red-500 text-white font-medium rounded-xl hover:from-orange-600 hover:to-red-600 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg transition-all flex items-center gap-2"
+                      >
+                        {processing ? (
+                          <ArrowPathIcon className="h-5 w-5 animate-spin" />
+                        ) : (
+                          <ArrowUturnLeftIcon className="h-5 w-5" />
+                        )}
+                        {processing ? 'Processing Return...' : 'Process Return & Update Stock'}
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -581,7 +678,7 @@ const StockReturnsPage = () => {
                   </div>
                   <div>
                     <p className="text-sm text-gray-500">Total Value</p>
-                    <p className="font-bold text-red-600">{formatCurrency(selectedReturn.total_return_value)}</p>
+                    <p className="font-bold text-red-600">{formatCurrency(selectedReturn.total_return_amount)}</p>
                   </div>
                 </div>
 
@@ -594,9 +691,9 @@ const StockReturnsPage = () => {
                         <span className="text-sm text-gray-500 ml-2">({item.product_code})</span>
                       </div>
                       <div className="flex items-center gap-4 text-sm">
-                        <span className="text-gray-600">Qty: {item.return_quantity}</span>
+                        <span className="text-gray-600">Qty: {item.quantity_returned}</span>
                         <span className="text-gray-600">@ {formatCurrency(item.unit_price)}</span>
-                        <span className="font-medium text-red-600">{formatCurrency(item.return_value)}</span>
+                        <span className="font-medium text-red-600">{formatCurrency(item.return_amount)}</span>
                       </div>
                     </div>
                   ))}

@@ -17,11 +17,22 @@ const processReturn = async (req, res) => {
       });
     }
 
-    const validItems = items.filter(i => i.quantity_returned > 0);
+    // Normalize field names: accept both return_quantity and quantity_returned
+    const normalizedItems = items.map(item => ({
+      delivery_item_id: item.delivery_item_id,
+      product_id: item.product_id,
+      quantity_returned: item.quantity_returned || item.return_quantity || 0,
+      return_amount: item.return_amount || null,
+      reason: item.reason || null,
+      condition_status: item.condition_status || 'good',
+      notes: item.notes || null,
+    }));
+
+    const validItems = normalizedItems.filter(i => i.quantity_returned > 0);
     if (validItems.length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'At least one item must have quantity_returned > 0'
+        message: 'At least one item must have a return quantity greater than 0'
       });
     }
 
