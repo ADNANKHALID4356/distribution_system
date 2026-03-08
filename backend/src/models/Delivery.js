@@ -796,8 +796,8 @@ class Delivery {
           od.unit_price,
           od.total_price,
           od.discount_percentage,
-          (od.unit_price * od.quantity * od.discount_percentage / 100) as discount_amount,
-          od.total_price as net_price,
+          od.discount,
+          od.net_price,
           p.product_name,
           p.product_code,
           p.category,
@@ -811,6 +811,28 @@ class Delivery {
 
       if (orderItems.length === 0) {
         throw new Error('Order has no items');
+      }
+
+      // Normalize item discount fields - compute percentage from amount if needed
+      for (const item of orderItems) {
+        const grossTotal = parseFloat(item.unit_price || 0) * parseFloat(item.quantity || 0);
+        const discountAmt = parseFloat(item.discount) || 0;
+        const discountPct = parseFloat(item.discount_percentage) || 0;
+        
+        // Use whichever discount source is available
+        if (discountPct > 0 && discountAmt === 0) {
+          item.discount_amount = grossTotal * discountPct / 100;
+          item.discount_percentage = discountPct;
+        } else if (discountAmt > 0 && discountPct === 0) {
+          item.discount_amount = discountAmt;
+          item.discount_percentage = grossTotal > 0 ? (discountAmt / grossTotal) * 100 : 0;
+        } else {
+          item.discount_amount = discountAmt;
+          item.discount_percentage = discountPct;
+        }
+        
+        // Calculate proper net_price
+        item.net_price = parseFloat(item.net_price) || (grossTotal - item.discount_amount);
       }
 
       console.log(`✅ Fetched ${orderItems.length} order items`);

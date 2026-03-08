@@ -656,8 +656,10 @@ const Order = {
         // MySQL may have various discount field names - normalize them
         const discount_amount = item.discount_amount || item.discount || 0;
         // Calculate discount_percentage from amount if not stored
+        // Use gross total (qty * unit_price) as base, NOT total_price (which is net)
+        const grossTotal = (parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0);
         const discount_percentage = parseFloat(item.discount_percentage) || 
-          (discount_amount > 0 && item.total_price > 0 ? (discount_amount / item.total_price) * 100 : 0);
+          (discount_amount > 0 && grossTotal > 0 ? (discount_amount / grossTotal) * 100 : 0);
         const net_price = item.net_price || (item.total_price - discount_amount);
         
         return {
