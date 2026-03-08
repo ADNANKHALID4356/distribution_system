@@ -32,6 +32,7 @@ const StockReturnsPage = () => {
   const [returnReason, setReturnReason] = useState('');
   const [returnNotes, setReturnNotes] = useState('');
   const [processing, setProcessing] = useState(false);
+  const [checkedItems, setCheckedItems] = useState({}); // Track which items are checked
 
   // View details state
   const [selectedReturn, setSelectedReturn] = useState(null);
@@ -105,7 +106,7 @@ const StockReturnsPage = () => {
       const delivery = response.data;
       setSelectedDelivery(delivery);
 
-      // Pre-populate return items with 0 quantities
+      // Pre-populate return items
       const items = (delivery.items || []).map(item => ({
         delivery_item_id: item.id,
         product_id: item.product_id,
@@ -119,6 +120,8 @@ const StockReturnsPage = () => {
         reason: '',
       }));
       setReturnItems(items);
+      // Initialize all checkboxes as unchecked
+      setCheckedItems({});
     } catch (err) {
       setError('Failed to load delivery details');
     } finally {
@@ -126,36 +129,71 @@ const StockReturnsPage = () => {
     }
   };
 
-  const updateReturnQuantity = (index, value) => {
-    const qty = parseInt(value) || 0;
-    setReturnItems(prev => {
-      const updated = [...prev];
-      updated[index] = {
-        ...updated[index],
-        return_quantity: Math.min(Math.max(0, qty), updated[index].max_returnable),
-      };
-      return updated;
+  const toggleItemCheck = (index) => {
+    setCheckedItems(prev => {
+      const newChecked = { ...prev };
+      const wasChecked = !!newChecked[index];
+      newChecked[index] = !wasChecked;
+
+      // When checking an item, default return_quantity to max_returnable
+      // When unchecking, reset return_quantity to 0
+      setReturnItems(prevItems => {
+        const updated = [...prevItems];
+        if (!wasChecked) {
+          updated[index] = { ...updated[index], return_quantity: updated[index].max_returnable };
+        } else {
+          updated[index] = { ...updated[index], return_quantity: 0 };
+        }
+        return updated;
+      });
+
+      return newChecked;
     });
   };
 
-  const updateReturnItemReason = (index, reason) => {
+  const toggleAllItems = () => {
+    const returnableItems = returnItems.reduce((acc, item, idx) => {
+      if (item.max_returnable > 0) acc[idx] = true;
+      return acc;
+    }, {});
+    const allChecked = Object.keys(returnableItems).every(idx => checkedItems[idx]);
+
+    if (allChecked) {
+      // Uncheck all
+      setCheckedItems({});
+      setReturnItems(prev => prev.map(item => ({ ...item, return_quantity: 0 })));
+    } else {
+      // Check all returnable items with max quantity
+      setCheckedItems(returnableItems);
+      setReturnItems(prev => prev.map(item => ({
+        ...item,
+        return_quantity: item.max_returnable > 0 ? item.max_returnable : 0,
+      })));
+    }
+  };
+
+  const updateReturnQuantity = (index, value) => {
+    const qty = parseInt(value) || 0;
+    const clamped = Math.min(Math.max(0, qty), returnItems[index].max_returnable);
     setReturnItems(prev => {
       const updated = [...prev];
-      updated[index] = { ...updated[index], reason };
+      updated[index] = { ...updated[index], return_quantity: clamped };
       return updated;
     });
+    // Auto-check/uncheck based on quantity
+    setCheckedItems(prev => ({ ...prev, [index]: clamped > 0 }));
   };
 
   const handleProcessReturn = async () => {
-    const itemsToReturn = returnItems.filter(item => item.return_quantity > 0);
+    const itemsToReturn = returnItems.filter((item, index) => checkedItems[index] && item.return_quantity > 0);
 
     if (itemsToReturn.length === 0) {
-      setError('Please specify at least one item to return');
+      setError('Please tick at least one item and specify a return quantity');
       return;
     }
 
     if (!returnReason) {
-      setError('Please provide a return reason');
+      setError('Please select a return reason');
       return;
     }
 
@@ -184,6 +222,7 @@ const StockReturnsPage = () => {
       setSearchResults([]);
       setSelectedDelivery(null);
       setReturnItems([]);
+      setCheckedItems({});
       setReturnReason('');
       setReturnNotes('');
     } catch (err) {
@@ -198,6 +237,7 @@ const StockReturnsPage = () => {
     setSearchResults([]);
     setSelectedDelivery(null);
     setReturnItems([]);
+    setCheckedItems({});
     setReturnReason('');
     setReturnNotes('');
     setError('');
@@ -530,64 +570,81 @@ const StockReturnsPage = () => {
                   <table className="w-full">
                     <thead className="bg-gray-50">
                       <tr>
+                        <th className="px-3 py-2 text-center text-xs font-semibold text-gray-600 bg-orange-50">
+                          <div className="flex flex-col items-center gap-1">
+                            <span>Return?</span>
+                            {selectedDelivery.status === 'delivered' && (
+                              <input
+                                type="checkbox"
+                                checked={returnItems.filter(i => i.max_returnable > 0).length > 0 &&
+                                  returnItems.every((item, idx) => item.max_returnable <= 0 || checkedItems[idx])}
+                                onChange={toggleAllItems}
+                                className="w-4 h-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500 cursor-pointer"
+                                title="Select/Deselect All"
+                              />
+                            )}
+                          </div>
+                        </th>
                         <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">Product</th>
                         <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600">Delivered</th>
                         <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600">Already Returned</th>
-                        <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600">Accepted</th>
+                        <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600">Max Returnable</th>
                         <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600">Unit Price</th>
                         <th className="px-3 py-2 text-center text-xs font-semibold text-gray-600 bg-orange-50">Return Qty</th>
                         <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600">Return Value</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">Item Reason</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {returnItems.map((item, index) => (
-                        <tr key={index} className={item.return_quantity > 0 ? 'bg-orange-50' : ''}>
-                          <td className="px-3 py-2">
-                            <span className="font-medium text-gray-800">{item.product_name}</span>
-                            {item.product_code && <span className="text-xs text-gray-500 ml-1">({item.product_code})</span>}
-                          </td>
-                          <td className="px-3 py-2 text-right text-gray-600 font-medium">{item.quantity_delivered}</td>
-                          <td className="px-3 py-2 text-right text-orange-600">{item.quantity_already_returned}</td>
-                          <td className="px-3 py-2 text-right text-green-600 font-medium">
-                            {item.quantity_delivered - item.quantity_already_returned - item.return_quantity}
-                          </td>
-                          <td className="px-3 py-2 text-right text-gray-600">{formatCurrency(item.unit_price)}</td>
-                          <td className="px-3 py-2 bg-orange-50">
-                            <input
-                              type="number"
-                              min="0"
-                              max={item.max_returnable}
-                              value={item.return_quantity}
-                              onChange={(e) => updateReturnQuantity(index, e.target.value)}
-                              className="w-20 px-2 py-1.5 border border-orange-300 rounded-lg text-center focus:ring-2 focus:ring-orange-500 font-medium"
-                              disabled={item.max_returnable <= 0 || selectedDelivery.status !== 'delivered'}
-                            />
-                          </td>
-                          <td className="px-3 py-2 text-right font-medium text-red-600">
-                            {formatCurrency(item.return_quantity * parseFloat(item.unit_price || 0))}
-                          </td>
-                          <td className="px-3 py-2">
-                            <input
-                              type="text"
-                              value={item.reason}
-                              onChange={(e) => updateReturnItemReason(index, e.target.value)}
-                              placeholder="Optional"
-                              className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
-                              disabled={selectedDelivery.status !== 'delivered'}
-                            />
-                          </td>
-                        </tr>
-                      ))}
+                      {returnItems.map((item, index) => {
+                        const isChecked = !!checkedItems[index];
+                        const canReturn = item.max_returnable > 0 && selectedDelivery.status === 'delivered';
+                        return (
+                          <tr key={index} className={isChecked ? 'bg-orange-50' : ''}>
+                            <td className="px-3 py-2 text-center bg-orange-50/50">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => toggleItemCheck(index)}
+                                disabled={!canReturn}
+                                className="w-5 h-5 rounded border-gray-300 text-orange-600 focus:ring-orange-500 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              <span className="font-medium text-gray-800">{item.product_name}</span>
+                              {item.product_code && <span className="text-xs text-gray-500 ml-1">({item.product_code})</span>}
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-600 font-medium">{item.quantity_delivered}</td>
+                            <td className="px-3 py-2 text-right text-orange-600">{item.quantity_already_returned}</td>
+                            <td className="px-3 py-2 text-right text-blue-600 font-medium">{item.max_returnable}</td>
+                            <td className="px-3 py-2 text-right text-gray-600">{formatCurrency(item.unit_price)}</td>
+                            <td className="px-3 py-2 bg-orange-50/50">
+                              <input
+                                type="number"
+                                min="0"
+                                max={item.max_returnable}
+                                value={item.return_quantity}
+                                onChange={(e) => updateReturnQuantity(index, e.target.value)}
+                                className={`w-20 px-2 py-1.5 border rounded-lg text-center focus:ring-2 focus:ring-orange-500 font-medium ${
+                                  isChecked ? 'border-orange-400 bg-white' : 'border-gray-200 bg-gray-50'
+                                }`}
+                                disabled={!canReturn}
+                              />
+                            </td>
+                            <td className={`px-3 py-2 text-right font-medium ${isChecked ? 'text-red-600' : 'text-gray-400'}`}>
+                              {formatCurrency(item.return_quantity * parseFloat(item.unit_price || 0))}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                     <tfoot className="bg-gray-50">
                       <tr>
-                        <td colSpan="3" className="px-3 py-3 text-right text-sm text-gray-500">
-                          Items to return: {returnItems.filter(i => i.return_quantity > 0).length}
+                        <td colSpan="4" className="px-3 py-3 text-right text-sm text-gray-500">
+                          Items selected: <span className="font-bold text-orange-600">{returnItems.filter((_, i) => checkedItems[i] && returnItems[i].return_quantity > 0).length}</span>
+                          {' / '}{returnItems.length}
                         </td>
-                        <td colSpan="3" className="px-3 py-3 text-right font-bold text-gray-700">Total Return Value:</td>
-                        <td className="px-3 py-3 text-right font-bold text-red-600 text-lg">{formatCurrency(totalReturnValue)}</td>
-                        <td></td>
+                        <td colSpan="2" className="px-3 py-3 text-right font-bold text-gray-700">Total Return Value:</td>
+                        <td colSpan="2" className="px-3 py-3 text-right font-bold text-red-600 text-lg">{formatCurrency(totalReturnValue)}</td>
                       </tr>
                     </tfoot>
                   </table>
@@ -631,7 +688,7 @@ const StockReturnsPage = () => {
                     <div className="mt-6 flex justify-end">
                       <button
                         onClick={handleProcessReturn}
-                        disabled={processing || returnItems.filter(i => i.return_quantity > 0).length === 0}
+                        disabled={processing || Object.values(checkedItems).filter(Boolean).length === 0 || !returnReason}
                         className="px-6 py-3 bg-gradient-to-r from-orange-500 to-red-500 text-white font-medium rounded-xl hover:from-orange-600 hover:to-red-600 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg transition-all flex items-center gap-2"
                       >
                         {processing ? (
@@ -639,7 +696,7 @@ const StockReturnsPage = () => {
                         ) : (
                           <ArrowUturnLeftIcon className="h-5 w-5" />
                         )}
-                        {processing ? 'Processing Return...' : 'Process Return & Update Stock'}
+                        {processing ? 'Processing Return...' : `Process Return (${Object.values(checkedItems).filter(Boolean).length} items) & Update Stock`}
                       </button>
                     </div>
                   </>

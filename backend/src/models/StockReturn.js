@@ -99,6 +99,13 @@ class StockReturn {
       const totalReturnAmount = validItems.reduce((sum, i) => sum + parseFloat(i.return_amount || 0), 0);
 
       // 6. Insert stock_returns header
+      // Convert return_date to MySQL-compatible format
+      let returnDate = returnData.return_date || new Date();
+      if (typeof returnDate === 'string') {
+        returnDate = new Date(returnDate);
+      }
+      const mysqlDate = returnDate.toISOString().slice(0, 19).replace('T', ' ');
+
       const [result] = await connection.query(`
         INSERT INTO stock_returns (
           return_number, delivery_id, challan_number,
@@ -119,7 +126,7 @@ class StockReturn {
         delivery.salesman_id,
         delivery.salesman_name,
         delivery.warehouse_id,
-        returnData.return_date || new Date(),
+        mysqlDate,
         totalItems,
         totalQuantityReturned,
         totalReturnAmount,
@@ -223,7 +230,7 @@ class StockReturn {
       await ShopLedger.createEntry({
         shop_id: delivery.shop_id,
         shop_name: delivery.shop_name,
-        transaction_date: returnData.return_date || new Date(),
+        transaction_date: mysqlDate,
         transaction_type: 'return',
         reference_type: 'stock_return',
         reference_id: returnId,
@@ -265,7 +272,7 @@ class StockReturn {
       await ShopLedger.createEntry({
         shop_id: delivery.shop_id,
         shop_name: delivery.shop_name,
-        transaction_date: returnData.return_date || new Date(),
+        transaction_date: mysqlDate,
         transaction_type: 'return',
         reference_type: 'stock_return',
         reference_id: returnId,
