@@ -240,12 +240,16 @@ exports.syncOrders = async (req, res) => {
                 [orderId, item.product_id, item.quantity, item.unit_price, item.total_price, discount_percentage]
               );
             } else {
-              // MySQL: has discount and net_price
+              // MySQL: has discount, discount_percentage, and net_price
+              const discountAmt = parseFloat(item.discount) || 0;
+              const discount_percentage = discountAmt > 0 && item.total_price > 0 
+                ? (discountAmt / item.total_price) * 100 
+                : 0;
               await connection.query(
                 `INSERT INTO ${orderDetailsTable} 
-                 (order_id, product_id, quantity, unit_price, total_price, discount, net_price) 
-                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-                [orderId, item.product_id, item.quantity, item.unit_price, item.total_price, item.discount || 0, item.net_price]
+                 (order_id, product_id, quantity, unit_price, total_price, discount, discount_percentage, net_price) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                [orderId, item.product_id, item.quantity, item.unit_price, item.total_price, discountAmt, discount_percentage, item.net_price]
               );
             }
           }

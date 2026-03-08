@@ -301,7 +301,7 @@ const Order = {
             console.log('✅ [BACKEND MODEL] All order items inserted successfully (SQLite)');
           } else {
             // MySQL: Batch insert with VALUES ?
-            // MySQL schema: has discount and net_price columns
+            // MySQL schema: has discount, discount_percentage, and net_price columns
             console.log('🔍 [BACKEND MODEL] Using MySQL - batch inserting items');
             const detailValues = items.map((item, index) => {
               console.log(`🔍 [BACKEND MODEL] Validating Item ${index + 1}:`, JSON.stringify(item));
@@ -317,13 +317,20 @@ const Order = {
                 throw new Error(`Item ${index + 1}: unit_price is required`);
               }
               
+              // Calculate discount_percentage from discount amount
+              const discountAmt = parseFloat(item.discount) || 0;
+              const discount_percentage = item.discount_percentage 
+                ? parseFloat(item.discount_percentage) 
+                : (discountAmt > 0 && item.total_price > 0 ? (discountAmt / item.total_price) * 100 : 0);
+              
               return [
                 orderId,
                 item.product_id,
                 item.quantity,
                 item.unit_price,
                 item.total_price,
-                item.discount || 0,
+                discountAmt,
+                discount_percentage,
                 item.net_price
               ];
             });
@@ -333,7 +340,7 @@ const Order = {
 
             const [detailResult] = await connection.query(
               `INSERT INTO ${ORDER_DETAILS_TABLE} 
-               (order_id, product_id, quantity, unit_price, total_price, discount, net_price)
+               (order_id, product_id, quantity, unit_price, total_price, discount, discount_percentage, net_price)
                VALUES ?`,
               [detailValues]
             );
@@ -648,7 +655,9 @@ const Order = {
       order.items = details.map(item => {
         // MySQL may have various discount field names - normalize them
         const discount_amount = item.discount_amount || item.discount || 0;
-        const discount_percentage = item.discount_percentage || 0;
+        // Calculate discount_percentage from amount if not stored
+        const discount_percentage = parseFloat(item.discount_percentage) || 
+          (discount_amount > 0 && item.total_price > 0 ? (discount_amount / item.total_price) * 100 : 0);
         const net_price = item.net_price || (item.total_price - discount_amount);
         
         return {
@@ -975,21 +984,28 @@ const Order = {
             }
             console.log('✅ [ORDER UPDATE] New order items inserted (SQLite)');
           } else {
-            // MySQL: Batch insert with discount and net_price
+            // MySQL: Batch insert with discount, discount_percentage, and net_price
             console.log('🔍 [ORDER UPDATE] Using MySQL - batch inserting items');
-            const itemValues = items.map(item => [
-              id,
-              item.product_id,
-              item.quantity,
-              item.unit_price,
-              item.discount || 0,
-              item.total_price,
-              item.net_price
-            ]);
+            const itemValues = items.map(item => {
+              const discountAmt = parseFloat(item.discount) || 0;
+              const discount_percentage = item.discount_percentage 
+                ? parseFloat(item.discount_percentage) 
+                : (discountAmt > 0 && item.total_price > 0 ? (discountAmt / item.total_price) * 100 : 0);
+              return [
+                id,
+                item.product_id,
+                item.quantity,
+                item.unit_price,
+                discountAmt,
+                discount_percentage,
+                item.total_price,
+                item.net_price
+              ];
+            });
 
             await connection.query(
               `INSERT INTO ${ORDER_DETAILS_TABLE} 
-               (order_id, product_id, quantity, unit_price, discount, total_price, net_price)
+               (order_id, product_id, quantity, unit_price, discount, discount_percentage, total_price, net_price)
                VALUES ?`,
               [itemValues]
             );

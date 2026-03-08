@@ -572,7 +572,7 @@ const DeliveryChallanPage = () => {
                         Unit Price
                       </th>
                       <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Discount
+                        Discount %
                       </th>
                       <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Total
@@ -593,14 +593,18 @@ const DeliveryChallanPage = () => {
                           Rs. {item.unit_price.toFixed(2)}
                         </td>
                         <td className="px-4 py-3 text-sm text-right text-red-600">
-                          {item.discount_amount > 0 ? (
-                            <div>
-                              <div>- Rs. {item.discount_amount.toFixed(2)}</div>
-                              {item.discount_percentage > 0 && (
-                                <div className="text-xs text-red-400">({item.discount_percentage.toFixed(1)}%)</div>
-                              )}
-                            </div>
-                          ) : '-'}
+                          {(() => {
+                            const discAmt = item.discount_amount || 0;
+                            const grossTotal = item.quantity * item.unit_price;
+                            const discPct = item.discount_percentage || 
+                              (discAmt > 0 && grossTotal > 0 ? (discAmt / grossTotal) * 100 : 0);
+                            return discPct > 0 ? (
+                              <div>
+                                <div className="font-medium">{discPct.toFixed(1)}%</div>
+                                <div className="text-xs text-red-400">(-Rs. {discAmt.toFixed(2)})</div>
+                              </div>
+                            ) : '-';
+                          })()}
                         </td>
                         <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
                           Rs. {item.total_price.toFixed(2)}
@@ -622,7 +626,7 @@ const DeliveryChallanPage = () => {
                       </div>
                       {totals.totalDiscount > 0 && (
                         <div className="flex justify-between text-sm">
-                          <span className="text-gray-600">Discount:</span>
+                          <span className="text-gray-600">Discount ({(totals.subtotal > 0 ? (totals.totalDiscount / totals.subtotal * 100) : 0).toFixed(1)}%):</span>
                           <span className="font-medium text-red-600">- Rs. {(totals?.totalDiscount || 0).toFixed(2)}</span>
                         </div>
                       )}

@@ -427,7 +427,7 @@ const DeliveryTrackingPage = () => {
                 <th style="width:60px">Code</th>
                 <th class="right" style="width:60px">Qty</th>
                 <th class="right" style="width:80px">Unit Price</th>
-                <th class="right" style="width:80px">Discount</th>
+                <th class="right" style="width:80px">Discount %</th>
                 <th class="right" style="width:90px">Total</th>
               </tr>
             </thead>
@@ -448,7 +448,7 @@ const DeliveryTrackingPage = () => {
                 <td>${item.product_code || '-'}</td>
                 <td class="right">${qty}</td>
                 <td class="right">Rs. ${price.toFixed(2)}</td>
-                <td class="discount">${effectiveItemDiscount > 0 ? '- Rs. ' + effectiveItemDiscount.toFixed(2) + ' (' + effectiveItemDiscountPct.toFixed(1) + '%)' : '-'}</td>
+                <td class="discount">${effectiveItemDiscount > 0 ? effectiveItemDiscountPct.toFixed(1) + '% (-Rs. ' + effectiveItemDiscount.toFixed(2) + ')' : '-'}</td>
                 <td class="right"><strong>Rs. ${itemTotal.toFixed(2)}</strong></td>
               </tr>`;
               }).join('')}
@@ -1196,7 +1196,7 @@ const DeliveryTrackingPage = () => {
                         <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Product</th>
                         <th className="px-4 py-2 text-right text-xs font-medium text-gray-500">Quantity</th>
                         <th className="px-4 py-2 text-right text-xs font-medium text-gray-500">Price</th>
-                        <th className="px-4 py-2 text-right text-xs font-medium text-gray-500">Discount</th>
+                        <th className="px-4 py-2 text-right text-xs font-medium text-gray-500">Discount %</th>
                         <th className="px-4 py-2 text-right text-xs font-medium text-gray-500">Total</th>
                       </tr>
                     </thead>
@@ -1208,14 +1208,18 @@ const DeliveryTrackingPage = () => {
                           <td className="px-4 py-2 text-sm text-right">{parseFloat(item.quantity_delivered || item.quantity_ordered || 0).toFixed(2)}</td>
                           <td className="px-4 py-2 text-sm text-right">Rs. {parseFloat(item.unit_price || 0).toFixed(2)}</td>
                           <td className="px-4 py-2 text-sm text-right text-red-600">
-                            {parseFloat(item.discount_amount || 0) > 0 ? (
-                              <div>
-                                <div>- Rs. {parseFloat(item.discount_amount || 0).toFixed(2)}</div>
-                                {parseFloat(item.discount_percentage || 0) > 0 && (
-                                  <div className="text-xs text-red-400">({parseFloat(item.discount_percentage || 0).toFixed(1)}%)</div>
-                                )}
-                              </div>
-                            ) : '-'}
+                            {(() => {
+                              const discAmt = parseFloat(item.discount_amount || 0);
+                              const grossTotal = parseFloat(item.quantity_delivered || item.quantity_ordered || 0) * parseFloat(item.unit_price || 0);
+                              const discPct = parseFloat(item.discount_percentage || 0) || 
+                                (discAmt > 0 && grossTotal > 0 ? (discAmt / grossTotal) * 100 : 0);
+                              return discPct > 0 ? (
+                                <div>
+                                  <div className="font-medium">{discPct.toFixed(1)}%</div>
+                                  <div className="text-xs text-red-400">(-Rs. {discAmt.toFixed(2)})</div>
+                                </div>
+                              ) : '-';
+                            })()}
                           </td>
                           <td className="px-4 py-2 text-sm text-right">Rs. {parseFloat(item.total_price || 0).toFixed(2)}</td>
                         </tr>

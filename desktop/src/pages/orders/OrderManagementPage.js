@@ -376,18 +376,21 @@ const OrderManagementPage = () => {
     const item = newItems[index];
     item.quantity = quantity;
     item.total_price = item.quantity * item.unit_price;
-    item.net_price = item.total_price - (item.discount || 0);
+    const pct = parseFloat(item.discount_percentage) || 0;
+    item.discount = item.total_price * pct / 100;
+    item.net_price = item.total_price - item.discount;
     setEditFormData(prev => ({ ...prev, items: newItems }));
   };
 
   /**
-   * Handle item discount change
+   * Handle item discount change (percentage-based)
    */
-  const handleItemDiscountChange = (index, discount) => {
+  const handleItemDiscountChange = (index, discountPercentage) => {
     const newItems = [...editFormData.items];
     const item = newItems[index];
-    item.discount = discount;
-    item.net_price = item.total_price - discount;
+    item.discount_percentage = discountPercentage;
+    item.discount = item.total_price * discountPercentage / 100;
+    item.net_price = item.total_price - item.discount;
     setEditFormData(prev => ({ ...prev, items: newItems }));
   };
 
@@ -1129,26 +1132,26 @@ const OrderManagementPage = () => {
                       <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
                       <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Quantity</th>
                       <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Unit Price</th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Discount</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Discount %</th>
                       <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Net Price</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
                     {selectedOrder.items && selectedOrder.items.map((item, index) => {
-                      // Calculate net_price if not provided
-                      const netPrice = item.net_price || (item.total_price - (item.discount || 0));
+                      const discountAmt = parseFloat(item.discount || 0);
+                      const discountPct = parseFloat(item.discount_percentage) || 
+                        (discountAmt > 0 && item.total_price > 0 ? (discountAmt / item.total_price) * 100 : 0);
+                      const netPrice = item.net_price || (item.total_price - discountAmt);
                       return (
                         <tr key={index}>
                           <td className="px-4 py-2 text-sm text-gray-900">{item.product_name}</td>
                           <td className="px-4 py-2 text-sm text-gray-900">{item.quantity}</td>
                           <td className="px-4 py-2 text-sm text-gray-900">{orderService.formatCurrency(item.unit_price)}</td>
                           <td className="px-4 py-2 text-sm text-gray-900">
-                            {parseFloat(item.discount || 0) > 0 ? (
-                              <span className="text-red-600">
-                                {orderService.formatCurrency(item.discount)}
-                                {parseFloat(item.discount_percentage || 0) > 0 && (
-                                  <span className="text-xs text-red-400 ml-1">({parseFloat(item.discount_percentage).toFixed(1)}%)</span>
-                                )}
+                            {discountPct > 0 ? (
+                              <span className="text-red-600 font-medium">
+                                {discountPct.toFixed(1)}%
+                                <span className="text-xs text-red-400 ml-1">({orderService.formatCurrency(discountAmt)})</span>
                               </span>
                             ) : '-'}
                           </td>
@@ -1170,7 +1173,16 @@ const OrderManagementPage = () => {
                     </div>
                     <div className="flex justify-between mb-2">
                       <span className="text-gray-600">Discount:</span>
-                      <span className="font-medium text-red-600">-{orderService.formatCurrency(selectedOrder.discount)}</span>
+                      <span className="font-medium text-red-600">
+                        {(() => {
+                          const discAmt = parseFloat(selectedOrder.discount) || 0;
+                          const totalAmt = parseFloat(selectedOrder.total_amount) || 0;
+                          const discPct = totalAmt > 0 && discAmt > 0 ? (discAmt / totalAmt * 100) : 0;
+                          return discPct > 0 
+                            ? `${discPct.toFixed(1)}% (-${orderService.formatCurrency(discAmt)})`
+                            : `-${orderService.formatCurrency(discAmt)}`;
+                        })()}
+                      </span>
                     </div>
                     <div className="flex justify-between text-lg font-bold border-t border-gray-200 pt-2">
                       <span>Net Amount:</span>
@@ -1304,7 +1316,7 @@ const OrderManagementPage = () => {
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Unit Price</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantity</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Discount</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Discount %</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Net Price</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
                       </tr>
@@ -1332,14 +1344,18 @@ const OrderManagementPage = () => {
                               {orderService.formatCurrency(item.total_price)}
                             </td>
                             <td className="px-4 py-3">
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={item.discount}
-                                onChange={(e) => handleItemDiscountChange(index, parseFloat(e.target.value) || 0)}
-                                className="w-24 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              />
+                              <div className="flex items-center">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  step="0.1"
+                                  value={parseFloat(item.discount_percentage) || 0}
+                                  onChange={(e) => handleItemDiscountChange(index, parseFloat(e.target.value) || 0)}
+                                  className="w-20 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                                <span className="ml-1 text-gray-500 text-sm">%</span>
+                              </div>
                             </td>
                             <td className="px-4 py-3 text-sm font-medium text-gray-900">
                               {orderService.formatCurrency(netPrice)}
@@ -1376,7 +1392,15 @@ const OrderManagementPage = () => {
                     </div>
                     <div className="flex justify-between mb-2">
                       <span className="text-gray-600">Total Discount:</span>
-                      <span className="font-medium text-red-600">-{orderService.formatCurrency(calculateTotals().discount)}</span>
+                      <span className="font-medium text-red-600">
+                        {(() => {
+                          const t = calculateTotals();
+                          const pct = t.total_amount > 0 && t.discount > 0 ? (t.discount / t.total_amount * 100) : 0;
+                          return pct > 0 
+                            ? `${pct.toFixed(1)}% (-${orderService.formatCurrency(t.discount)})`
+                            : `-${orderService.formatCurrency(t.discount)}`;
+                        })()}
+                      </span>
                     </div>
                     <div className="flex justify-between text-lg font-bold border-t border-gray-200 pt-2">
                       <span>Net Amount:</span>
