@@ -275,7 +275,7 @@ exports.createDelivery = async (req, res) => {
  */
 exports.updateDeliveryStatus = async (req, res) => {
   try {
-    const { status, received_by, actual_delivery_time, remarks } = req.body;
+    const { status, received_by, delivered_date, actual_delivery_time, remarks, notes } = req.body;
 
     if (!status) {
       return res.status(400).json({
@@ -293,9 +293,9 @@ exports.updateDeliveryStatus = async (req, res) => {
     }
 
     const updateData = {
-      received_by,
-      actual_delivery_time,
-      remarks
+      receiver_name: received_by,
+      delivered_date: delivered_date || actual_delivery_time,
+      notes: notes || remarks
     };
 
     const delivery = await Delivery.updateStatus(req.params.id, status, updateData);

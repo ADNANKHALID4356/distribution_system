@@ -40,6 +40,8 @@ class Delivery {
       let query = `
         SELECT 
           d.*,
+          d.receiver_name as received_by,
+          d.updated_at as delivered_date,
           w.name as warehouse_name,
           COUNT(DISTINCT di.id) as items_count
         FROM deliveries d
@@ -241,6 +243,8 @@ class Delivery {
       const [deliveries] = await db.query(`
         SELECT 
           d.*,
+          d.receiver_name as received_by,
+          d.updated_at as delivered_date,
           w.name as warehouse_name,
           w.address as warehouse_address
         FROM deliveries d
@@ -477,23 +481,14 @@ class Delivery {
       const updates = ['status = ?'];
       const params = [status];
 
-      // Accept both field name conventions from frontend
-      const receivedBy = updateData.received_by;
-      const deliveryTime = updateData.actual_delivery_time || updateData.delivered_date;
-      const remarks = updateData.remarks || updateData.notes;
+      // Map to actual DB column names
+      const receiverName = updateData.receiver_name || updateData.received_by;
+      const notes = updateData.notes || updateData.remarks;
 
       if (status === 'delivered') {
-        const useSQLite = process.env.USE_SQLITE === 'true';
-        updates.push(useSQLite ? "received_at = datetime('now')" : 'received_at = NOW()');
-        
-        if (receivedBy) {
-          updates.push('received_by = ?');
-          params.push(receivedBy);
-        }
-
-        if (deliveryTime) {
-          updates.push('actual_delivery_time = ?');
-          params.push(deliveryTime);
+        if (receiverName) {
+          updates.push('receiver_name = ?');
+          params.push(receiverName);
         }
 
         // Get delivery details to check if it was created from an order
@@ -598,9 +593,9 @@ class Delivery {
         }
       }
 
-      if (remarks) {
-        updates.push('remarks = ?');
-        params.push(remarks);
+      if (notes) {
+        updates.push('notes = ?');
+        params.push(notes);
       }
 
       params.push(id);

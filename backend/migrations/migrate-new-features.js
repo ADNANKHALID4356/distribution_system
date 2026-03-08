@@ -1,6 +1,6 @@
 /**
  * Migration: New Features - March 2026
- * 
+ *                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          poiuytrelkjhgfdnbvy8765jhgfkjh
  * 1. stock_returns table - Track partial delivery returns
  * 2. company_name column on products - Track product manufacturer/company
  * 3. daily_collections table - Track daily received amounts
