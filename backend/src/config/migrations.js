@@ -81,6 +81,7 @@ async function runMigrations() {
         payment_method VARCHAR(50) DEFAULT 'cash',
         reference_number VARCHAR(100),
         description TEXT,
+        received_from VARCHAR(200),
         notes TEXT,
         created_by INT,
         created_by_name VARCHAR(100),
@@ -96,6 +97,9 @@ async function runMigrations() {
     await safeAddColumn('order_details', 'discount', 'DECIMAL(15,2) DEFAULT 0', 'total_price');
     await safeAddColumn('order_details', 'discount_percentage', 'DECIMAL(5,2) DEFAULT 0', 'discount');
     await safeAddColumn('order_details', 'net_price', 'DECIMAL(15,2) DEFAULT 0', 'discount_percentage');
+
+    // 6. Ensure received_from column exists in daily_collections
+    await safeAddColumn('daily_collections', 'received_from', 'VARCHAR(200)', 'description');
 
     console.log('✅ Auto-migrations completed successfully');
   } catch (error) {

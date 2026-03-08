@@ -16,8 +16,8 @@ class DailyCollection {
         collection_date, shop_id, shop_name,
         salesman_id, salesman_name, amount,
         payment_method, reference_number,
-        description, notes, created_by, created_by_name
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        description, received_from, notes, created_by, created_by_name
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       data.collection_date || new Date(),
       data.shop_id || null,
@@ -28,6 +28,7 @@ class DailyCollection {
       data.payment_method || 'cash',
       data.reference_number || null,
       data.description || null,
+      data.received_from || null,
       data.notes || null,
       data.created_by || null,
       data.created_by_name || null
@@ -179,7 +180,7 @@ class DailyCollection {
         amount = COALESCE(?, amount),
         payment_method = COALESCE(?, payment_method),
         reference_number = ?,
-        description = ?, notes = ?
+        description = ?, received_from = ?, notes = ?
       WHERE id = ?
     `, [
       data.collection_date,
@@ -188,7 +189,7 @@ class DailyCollection {
       data.amount,
       data.payment_method,
       data.reference_number || null,
-      data.description || null, data.notes || null,
+      data.description || null, data.received_from || null, data.notes || null,
       id
     ]);
 
