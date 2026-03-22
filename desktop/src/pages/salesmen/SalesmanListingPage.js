@@ -1,15 +1,15 @@
 import React, { useState, useEffect } from 'react';
+import { useToast } from '../../context/ToastContext';
 import { useNavigate } from 'react-router-dom';
 import salesmanService from '../../services/salesmanService';
 import './SalesmanListingPage.css';
 
 function SalesmanListingPage() {
+  const { showToast } = useToast();
   const navigate = useNavigate();
   const [salesmen, setSalesmen] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [success, setSuccess] = useState('');
-  const [stats, setStats] = useState({ total: 0, active: 0, cities: 0 });
+      const [stats, setStats] = useState({ total: 0, active: 0, cities: 0 });
   
   // Filters and pagination
   const [searchTerm, setSearchTerm] = useState('');
@@ -71,7 +71,6 @@ function SalesmanListingPage() {
 
   const fetchSalesmen = async () => {
     setLoading(true);
-    setError(null);
     
     try {
       const filters = {
@@ -103,7 +102,7 @@ function SalesmanListingPage() {
       setTotalPages(paginationData.totalPages || 1);
       
     } catch (err) {
-      setError('Failed to fetch salesmen: ' + (err.message || 'Unknown error'));
+      showToast('Failed to fetch salesmen: ' + (err.message || 'Unknown error'), 'error');
       console.error('Fetch error:', err);
     } finally {
       setLoading(false);
@@ -118,7 +117,7 @@ function SalesmanListingPage() {
         await salesmanService.deleteSalesman(id);
         fetchSalesmen();
       } catch (err) {
-        setError('Failed to deactivate salesman');
+        showToast('Failed to deactivate salesman', 'error');
         console.error('Delete error:', err);
       }
     } else {
@@ -136,8 +135,8 @@ function SalesmanListingPage() {
   const confirmPermanentDelete = async () => {
     try {
       await salesmanService.permanentDeleteSalesman(deleteModal.id);
-      setSuccess(`✓ "${deleteModal.name}" has been permanently deleted from the database.`);
-      setTimeout(() => setSuccess(''), 5000);
+      showToast(`✓ "${deleteModal.name}" has been permanently deleted from the database.`, 'success');
+      setTimeout(() => {}, 5000);
       setDeleteModal({ show: false, id: null, name: '', isPermanent: false });
       
       // Reset to page 1 if current page becomes empty
@@ -147,7 +146,7 @@ function SalesmanListingPage() {
         fetchSalesmen();
       }
     } catch (err) {
-      setError('Failed to permanently delete salesman');
+      showToast('Failed to permanently delete salesman', 'error');
       console.error('Permanent delete error:', err);
       setDeleteModal({ show: false, id: null, name: '', isPermanent: false });
     }
@@ -171,8 +170,8 @@ function SalesmanListingPage() {
         salesmanName: name
       });
     } catch (err) {
-      setError('Failed to retrieve credentials: ' + (err.message || 'Unknown error'));
-      setTimeout(() => setError(''), 5000);
+      showToast('Failed to retrieve credentials: ' + (err.message || 'Unknown error'), 'error');
+      setTimeout(() => {}, 5000);
       console.error('Get credentials error:', err);
     }
   };
@@ -192,8 +191,8 @@ function SalesmanListingPage() {
   const copyToClipboard = (text, label) => {
     // Check if text is valid
     if (!text || text.trim() === '') {
-      setError(`❌ No ${label} to copy`);
-      setTimeout(() => setError(''), 3000);
+      showToast(`❌ No ${label} to copy`, 'error');
+      setTimeout(() => {}, 3000);
       return;
     }
 
@@ -201,8 +200,8 @@ function SalesmanListingPage() {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text)
         .then(() => {
-          setSuccess(`✓ ${label} copied to clipboard!`);
-          setTimeout(() => setSuccess(''), 3000);
+          showToast(`✓ ${label} copied to clipboard!`, 'success');
+          setTimeout(() => {}, 3000);
         })
         .catch((err) => {
           console.error('Clipboard API failed:', err);
@@ -229,16 +228,16 @@ function SalesmanListingPage() {
     try {
       const successful = document.execCommand('copy');
       if (successful) {
-        setSuccess(`✓ ${label} copied to clipboard!`);
-        setTimeout(() => setSuccess(''), 3000);
+        showToast(`✓ ${label} copied to clipboard!`, 'success');
+        setTimeout(() => {}, 3000);
       } else {
-        setError(`❌ Failed to copy ${label}. Please copy manually.`);
-        setTimeout(() => setError(''), 3000);
+        showToast(`❌ Failed to copy ${label}. Please copy manually.`, 'error');
+        setTimeout(() => {}, 3000);
       }
     } catch (err) {
       console.error('Fallback copy failed:', err);
-      setError(`❌ Copy failed. Please select and copy manually: ${text}`);
-      setTimeout(() => setError(''), 5000);
+      showToast(`❌ Copy failed. Please select and copy manually: ${text}`, 'error');
+      setTimeout(() => {}, 5000);
     }
     
     document.body.removeChild(textarea);
@@ -270,8 +269,8 @@ function SalesmanListingPage() {
   // Submit password reset
   const submitPasswordReset = async () => {
     if (!resetPasswordModal.newPassword || resetPasswordModal.newPassword.length < 6) {
-      setError('Password must be at least 6 characters long');
-      setTimeout(() => setError(''), 5000);
+      showToast('Password must be at least 6 characters long', 'error');
+      setTimeout(() => {}, 5000);
       return;
     }
 
@@ -289,8 +288,8 @@ function SalesmanListingPage() {
         resultPassword: data.new_password || data.password || ''
       }));
     } catch (err) {
-      setError('Failed to reset password: ' + (err.message || 'Unknown error'));
-      setTimeout(() => setError(''), 5000);
+      showToast('Failed to reset password: ' + (err.message || 'Unknown error'), 'error');
+      setTimeout(() => {}, 5000);
       console.error('Reset password error:', err);
     }
   };
@@ -368,8 +367,8 @@ function SalesmanListingPage() {
       const { salesmanId, amount, transactionType, paymentMethod, referenceNumber, description, notes, transactionDate } = ledgerModal;
       
       if (!amount || parseFloat(amount) <= 0) {
-        setError('Please enter a valid amount');
-        setTimeout(() => setError(''), 5000);
+        showToast('Please enter a valid amount', 'error');
+        setTimeout(() => {}, 5000);
         return;
       }
 
@@ -385,8 +384,8 @@ function SalesmanListingPage() {
       });
 
       if (response.success) {
-        setSuccess('Salary record added successfully!');
-        setTimeout(() => setSuccess(''), 5000);
+        showToast('Salary record added successfully!', 'success');
+        setTimeout(() => {}, 5000);
         // Refresh ledger history
         const [historyResponse, summaryResponse] = await Promise.all([
           salesmanService.getSalesmanLedger(salesmanId),
@@ -408,8 +407,8 @@ function SalesmanListingPage() {
         }));
       }
     } catch (err) {
-      setError('Failed to add salary record: ' + (err.message || 'Unknown error'));
-      setTimeout(() => setError(''), 5000);
+      showToast('Failed to add salary record: ' + (err.message || 'Unknown error'), 'error');
+      setTimeout(() => {}, 5000);
       console.error('Add salary error:', err);
     }
   };
@@ -417,8 +416,8 @@ function SalesmanListingPage() {
   const handleDeleteLedgerEntry = async (entryId) => {
     try {
       await salesmanService.deleteLedgerEntry(entryId);
-      setSuccess('Entry deleted successfully!');
-      setTimeout(() => setSuccess(''), 5000);
+      showToast('Entry deleted successfully!', 'success');
+      setTimeout(() => {}, 5000);
       
       // Refresh ledger history
       const [historyResponse, summaryResponse] = await Promise.all([
@@ -432,8 +431,8 @@ function SalesmanListingPage() {
         ledgerSummary: summaryResponse.data || null
       }));
     } catch (err) {
-      setError('Failed to delete entry: ' + (err.message || 'Unknown error'));
-      setTimeout(() => setError(''), 5000);
+      showToast('Failed to delete entry: ' + (err.message || 'Unknown error'), 'error');
+      setTimeout(() => {}, 5000);
       console.error('Delete error:', err);
     }
   };
@@ -478,17 +477,6 @@ function SalesmanListingPage() {
     );
   }
 
-  if (error) {
-    return (
-      <div className="salesman-listing-page">
-        <div className="error-container">
-          <p>{error}</p>
-          <button onClick={fetchSalesmen}>Retry</button>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="salesman-listing-page">
       {/* Header with Back Button */}
@@ -507,21 +495,9 @@ function SalesmanListingPage() {
         </button>
       </div>
 
-      {/* Error Alert */}
-      {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 flex justify-between items-center">
-          <span>{error}</span>
-          <button onClick={() => setError('')} className="text-red-700 hover:text-red-900 font-bold">&times;</button>
-        </div>
-      )}
+      
 
-      {/* Success Alert */}
-      {success && (
-        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4 flex justify-between items-center">
-          <span>{success}</span>
-          <button onClick={() => setSuccess('')} className="text-green-700 hover:text-green-900 font-bold">&times;</button>
-        </div>
-      )}
+      
 
       {/* Filters */}
       <div className="filters-section">

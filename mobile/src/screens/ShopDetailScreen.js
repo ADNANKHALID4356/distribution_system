@@ -20,8 +20,10 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import dbHelper from '../database/dbHelper';
+import { useToast } from '../context/ToastContext';
 
 const ShopDetailScreen = ({ route, navigation }) => {
+  const { showToast } = useToast();
   const { shopId } = route.params;
   const { user } = useAuth(); // Use AuthContext instead of AsyncStorage
   const [shop, setShop] = useState(null);
@@ -37,14 +39,14 @@ const ShopDetailScreen = ({ route, navigation }) => {
       const shopData = await dbHelper.getShopById(shopId);
       
       if (!shopData) {
-        Alert.alert('Error', 'Shop not found');
+        showToast('Shop not found', 'error');
         navigation.goBack();
         return;
       }
-      
+
       setShop(shopData);
     } catch (error) {
-      Alert.alert('Error', 'Failed to load shop details');
+      showToast('Failed to load shop details', 'error');
     } finally {
       setLoading(false);
     }
@@ -68,7 +70,7 @@ const ShopDetailScreen = ({ route, navigation }) => {
 
   const handleCall = (phone) => {
     if (!phone) {
-      Alert.alert('Error', 'Phone number not available');
+      showToast('Phone number not available', 'error');
       return;
     }
     Linking.openURL(`tel:${phone}`);
@@ -76,7 +78,7 @@ const ShopDetailScreen = ({ route, navigation }) => {
 
   const handleMessage = (phone) => {
     if (!phone) {
-      Alert.alert('Error', 'Phone number not available');
+      showToast('Phone number not available', 'error');
       return;
     }
     Linking.openURL(`sms:${phone}`);

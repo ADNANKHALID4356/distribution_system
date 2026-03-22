@@ -25,8 +25,10 @@ import shopService from '../services/shopService';
 import routeService from '../services/routeService';
 import syncService from '../services/syncService';
 import { useFocusEffect } from '@react-navigation/native';
+import { useToast } from '../context/ToastContext';
 
 const ShopListingScreen = ({ navigation }) => {
+  const { showToast } = useToast();
   const [shops, setShops] = useState([]);
   const [routes, setRoutes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -108,22 +110,18 @@ const ShopListingScreen = ({ navigation }) => {
       const shopsResult = await shopService.forceRefresh();
       
       if (routesResult.success && shopsResult.success) {
-        Alert.alert('Success', `Synced ${shopsResult.count} shops successfully`);
+        showToast(`Synced ${shopsResult.count} shops successfully`, 'success');
         await loadData();
       } else if (routesResult.fromCache || shopsResult.fromCache) {
-        Alert.alert('Offline Mode', 'No internet connection. Showing cached data.');
+        showToast('Offline Mode: No internet connection. Showing cached data.', 'info');
         await loadData();
       } else {
-        Alert.alert('Sync Error', 'Failed to sync data from server. Showing cached data.');
+        showToast('Sync Error: Failed to sync data from server. Showing cached data.', 'error');
         await loadData();
       }
     } catch (error) {
       console.error('Sync error:', error);
-      Alert.alert(
-        'Sync Failed',
-        'Unable to connect to server. Your cached data is still available. You can continue working offline.',
-        [{ text: 'OK' }]
-      );
+      showToast('Sync Failed: Unable to connect to server. Using cached data.', 'error');
       await loadData(); // Load cached data
     } finally {
       setRefreshing(false);

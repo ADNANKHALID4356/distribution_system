@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useToast } from '../../context/ToastContext';
 import { useNavigate } from 'react-router-dom';
 import productService from '../../services/productService';
 import {
@@ -10,11 +11,11 @@ import {
 } from '@heroicons/react/24/outline';
 
 const BulkImportPage = () => {
+  const { showToast } = useToast();
   const navigate = useNavigate();
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [results, setResults] = useState(null);
+    const [results, setResults] = useState(null);
   const [preview, setPreview] = useState([]);
 
   // Handle file selection
@@ -22,11 +23,10 @@ const BulkImportPage = () => {
     const selectedFile = e.target.files[0];
     if (selectedFile) {
       if (selectedFile.type !== 'text/csv' && !selectedFile.name.endsWith('.csv')) {
-        setError('Please select a CSV file');
+        showToast('Please select a CSV file', 'error');
         return;
       }
       setFile(selectedFile);
-      setError('');
       setResults(null);
       
       // Read and preview file
@@ -121,12 +121,11 @@ const BulkImportPage = () => {
   // Handle import
   const handleImport = async () => {
     if (!file) {
-      setError('Please select a file to import');
+      showToast('Please select a file to import', 'error');
       return;
     }
 
     setLoading(true);
-    setError('');
     
     try {
       // Read file
@@ -136,7 +135,7 @@ const BulkImportPage = () => {
         const products = parseCSV(text);
         
         if (products.length === 0) {
-          setError('No valid products found in the file');
+          showToast('No valid products found in the file', 'error');
           setLoading(false);
           return;
         }
@@ -147,17 +146,17 @@ const BulkImportPage = () => {
         if (response.success) {
           setResults(response.data);
         } else {
-          setError(response.message || 'Import failed');
+          showToast(response.message || 'Import failed', 'error');
         }
         setLoading(false);
       };
       reader.onerror = () => {
-        setError('Failed to read file');
+        showToast('Failed to read file', 'error');
         setLoading(false);
       };
       reader.readAsText(file);
     } catch (err) {
-      setError(err.message || 'Import failed');
+      showToast(err.message || 'Import failed', 'error');
       setLoading(false);
     }
   };
@@ -209,12 +208,7 @@ Fresh Milk,Dairy,Nestle,1 Liter,150,1440,50,10,3,8000345678,Fresh full cream mil
             </button>
           </div>
 
-          {/* Error Alert */}
-          {error && (
-            <div className="mt-4 rounded-md bg-red-50 p-4">
-              <p className="text-sm text-red-800">{error}</p>
-            </div>
-          )}
+          
         </div>
 
         {/* Upload Section */}

@@ -5,6 +5,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { useToast } from '../../context/ToastContext';
 import { useNavigate } from 'react-router-dom';
 import { 
   Search, Filter, Download, Eye, RefreshCw, Calendar,
@@ -54,6 +55,7 @@ const renderProductsList = (productsString, forPrint = false) => {
 };
 
 const OrderManagementPage = () => {
+  const { showToast } = useToast();
   const navigate = useNavigate();
   
   // State
@@ -97,9 +99,7 @@ const OrderManagementPage = () => {
   const [editFormData, setEditFormData] = useState(null);
 
   // Notification states
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-
+    
   // Fetch data on mount and filter changes
   useEffect(() => {
     fetchOrders();
@@ -137,8 +137,8 @@ const OrderManagementPage = () => {
       } else {
         console.error('❌ [FRONTEND] API returned success: false');
         const errorMsg = response.message || 'Unknown error';
-        setError(`Failed to fetch orders: ${errorMsg}`);
-        setTimeout(() => setError(''), 5000);
+        showToast(`Failed to fetch orders: ${errorMsg}`, 'error');
+        setTimeout(() => {}, 5000);
       }
     } catch (error) {
       console.error('❌ [FRONTEND] Error fetching orders:', error);
@@ -166,8 +166,8 @@ const OrderManagementPage = () => {
         errorMsg = error.response?.data?.message || error.message || 'Failed to fetch orders';
       }
       
-      setError(`Failed to fetch orders: ${errorMsg}. Check browser console for details.`);
-      setTimeout(() => setError(''), 8000);
+      showToast(`Failed to fetch orders: ${errorMsg}. Check browser console for details.`, 'error');
+      setTimeout(() => {}, 8000);
     } finally {
       setLoading(false);
     }
@@ -232,12 +232,12 @@ const OrderManagementPage = () => {
   const handleExport = async () => {
     try {
       await orderService.exportToExcel(orders);
-      setSuccess('Orders exported successfully!');
-      setTimeout(() => setSuccess(''), 5000);
+      showToast('Orders exported successfully!', 'success');
+      setTimeout(() => {}, 5000);
     } catch (error) {
       console.error('Error exporting orders:', error);
-      setError('Failed to export orders');
-      setTimeout(() => setError(''), 5000);
+      showToast('Failed to export orders', 'error');
+      setTimeout(() => {}, 5000);
     }
   };
 
@@ -253,8 +253,8 @@ const OrderManagementPage = () => {
       }
     } catch (error) {
       console.error('Error fetching order details:', error);
-      setError('Failed to fetch order details');
-      setTimeout(() => setError(''), 5000);
+      showToast('Failed to fetch order details', 'error');
+      setTimeout(() => {}, 5000);
     }
   };
 
@@ -267,8 +267,8 @@ const OrderManagementPage = () => {
       const response = await orderService.updateOrderStatus(orderId, newStatus, `Status changed to ${newStatus}`);
       
       if (response.success) {
-        setSuccess('Order status updated successfully!');
-        setTimeout(() => setSuccess(''), 5000);
+        showToast('Order status updated successfully!', 'success');
+        setTimeout(() => {}, 5000);
         fetchOrders();
         fetchStatistics();
       }
@@ -279,15 +279,15 @@ const OrderManagementPage = () => {
       const errorMsg = error.response?.data?.message || error.message || 'Failed to update order status';
       
       if (errorMsg.toLowerCase().includes('insufficient stock')) {
-        setError(
+        showToast(
           'Cannot Finalize Order - Insufficient Stock: ' +
           errorMsg + ' ' +
           'Please check stock levels or adjust order quantities before finalizing.'
-        );
-        setTimeout(() => setError(''), 8000);
+        , 'error');
+        setTimeout(() => {}, 8000);
       } else {
-        setError('Error: ' + errorMsg);
-        setTimeout(() => setError(''), 5000);
+        showToast('Error: ' + errorMsg, 'error');
+        setTimeout(() => {}, 5000);
       }
     }
   };
@@ -328,8 +328,8 @@ const OrderManagementPage = () => {
         
         // Check if order can be edited
         if (['finalized', 'delivered'].includes(order.status)) {
-          setError('Cannot edit finalized or delivered orders');
-          setTimeout(() => setError(''), 5000);
+          showToast('Cannot edit finalized or delivered orders', 'error');
+          setTimeout(() => {}, 5000);
           return;
         }
         
@@ -356,8 +356,8 @@ const OrderManagementPage = () => {
       }
     } catch (error) {
       console.error('Error loading order for edit:', error);
-      setError('Failed to load order details');
-      setTimeout(() => setError(''), 5000);
+      showToast('Failed to load order details', 'error');
+      setTimeout(() => {}, 5000);
     }
   };
 
@@ -400,8 +400,8 @@ const OrderManagementPage = () => {
   const handleRemoveItem = (index) => {
     const newItems = editFormData.items.filter((_, i) => i !== index);
     if (newItems.length === 0) {
-      setError('Order must have at least one item');
-      setTimeout(() => setError(''), 5000);
+      showToast('Order must have at least one item', 'error');
+      setTimeout(() => {}, 5000);
       return;
     }
     setEditFormData(prev => ({ ...prev, items: newItems }));
@@ -413,8 +413,8 @@ const OrderManagementPage = () => {
   const handleDeleteOrder = async (orderId, orderNumber, status) => {
     // Frontend validation (backend also checks)
     if (['finalized', 'delivered'].includes(status)) {
-      setError('Cannot delete finalized or delivered orders');
-      setTimeout(() => setError(''), 5000);
+      showToast('Cannot delete finalized or delivered orders', 'error');
+      setTimeout(() => {}, 5000);
       return;
     }
 
@@ -424,8 +424,8 @@ const OrderManagementPage = () => {
       const response = await orderService.deleteOrder(orderId);
       
       if (response.success) {
-        setSuccess(`Order #${orderNumber} deleted successfully${status === 'placed' ? ' (stock restored)' : ''}`);
-        setTimeout(() => setSuccess(''), 5000);
+        showToast(`Order #${orderNumber} deleted successfully${status === 'placed' ? ' (stock restored)' : ''}`, 'success');
+        setTimeout(() => {}, 5000);
         
         // Close detail modal if it was open for this order
         if (selectedOrder?.id === orderId) {
@@ -447,8 +447,8 @@ const OrderManagementPage = () => {
     } catch (error) {
       console.error('Delete order error:', error);
       const errorMessage = error.response?.data?.message || error.message || 'Failed to delete order';
-      setError(errorMessage);
-      setTimeout(() => setError(''), 5000);
+      showToast(errorMessage, 'error');
+      setTimeout(() => {}, 5000);
     } finally {
       setLoading(false);
     }
@@ -473,8 +473,8 @@ const OrderManagementPage = () => {
   const handleSaveEdit = async () => {
     try {
       if (!editFormData.items || editFormData.items.length === 0) {
-        setError('Order must have at least one item');
-        setTimeout(() => setError(''), 5000);
+        showToast('Order must have at least one item', 'error');
+        setTimeout(() => {}, 5000);
         return;
       }
 
@@ -493,8 +493,8 @@ const OrderManagementPage = () => {
       const response = await orderService.updateOrder(editingOrder.id, updateData);
       
       if (response.success) {
-        setSuccess('Order updated successfully!');
-        setTimeout(() => setSuccess(''), 5000);
+        showToast('Order updated successfully!', 'success');
+        setTimeout(() => {}, 5000);
         setShowEditModal(false);
         setEditingOrder(null);
         setEditFormData(null);
@@ -503,8 +503,8 @@ const OrderManagementPage = () => {
       }
     } catch (error) {
       console.error('Error updating order:', error);
-      setError('Failed to update order: ' + (error.response?.data?.message || error.message));
-      setTimeout(() => setError(''), 5000);
+      showToast('Failed to update order: ' + (error.response?.data?.message || error.message), 'error');
+      setTimeout(() => {}, 5000);
     }
   };
 
@@ -638,21 +638,9 @@ const OrderManagementPage = () => {
         <p className="text-gray-600 mt-1">Manage, process, and track all orders</p>
       </div>
 
-      {/* Error Alert */}
-      {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 flex justify-between items-center">
-          <span>{error}</span>
-          <button onClick={() => setError('')} className="text-red-700 hover:text-red-900 font-bold">&times;</button>
-        </div>
-      )}
+      
 
-      {/* Success Alert */}
-      {success && (
-        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4 flex justify-between items-center">
-          <span>{success}</span>
-          <button onClick={() => setSuccess('')} className="text-green-700 hover:text-green-900 font-bold">&times;</button>
-        </div>
-      )}
+      
 
       {/* Statistics Cards */}
       {stats && (

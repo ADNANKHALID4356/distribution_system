@@ -82,15 +82,11 @@ const DashboardPage = () => {
     }
   }, []);
 
-  useEffect(() => {
-    fetchDashboardStats();
-    // Auto-refresh every 30 seconds
-    const interval = setInterval(() => {
-      fetchDashboardStats();
-    }, 30000);
-    return () => clearInterval(interval);
-  }, [fetchDashboardStats]);
+useEffect(() => {
+  fetchDashboardStats();
+}, [fetchDashboardStats]);
 
+  
   // Refresh data when navigating back to this page
   useEffect(() => {
     fetchDashboardStats();
@@ -182,10 +178,6 @@ const DashboardPage = () => {
             </div>
             <p className="text-primary-100 text-lg">
               You're logged in as <span className="font-bold text-white bg-white/20 px-3 py-1 rounded-full text-sm">{user?.role}</span>
-            </p>
-            <p className="text-primary-200 text-sm mt-3 flex items-center gap-2">
-              <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
-              Dashboard auto-refreshes every 30 seconds
             </p>
           </div>
         </div>

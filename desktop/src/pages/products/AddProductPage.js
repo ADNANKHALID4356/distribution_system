@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
+import { useToast } from '../../context/ToastContext';
 import { useNavigate } from 'react-router-dom';
 import productService from '../../services/productService';
 import warehouseService from '../../services/warehouseService';
 import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 
 const AddProductPage = () => {
+  const { showToast } = useToast();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [categories, setCategories] = useState([]);
+    const [categories, setCategories] = useState([]);
   const [brands, setBrands] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
@@ -74,17 +75,16 @@ const AddProductPage = () => {
   // Handle form submit
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
     setLoading(true);
 
     // Validate required fields
     if (!formData.product_name) {
-      setError('Product name is required');
+      showToast('Product name is required', 'error');
       setLoading(false);
       return;
     }
     if (!formData.unit_price || formData.unit_price <= 0) {
-      setError('Valid unit price is required');
+      showToast('Valid unit price is required', 'error');
       setLoading(false);
       return;
     }
@@ -139,7 +139,7 @@ const AddProductPage = () => {
             console.error('⚠️ Error adding product to warehouses:', warehouseError);
             console.error('⚠️ Error details:', warehouseError.response?.data);
             // Show error to user
-            setError('Product created but failed to add to warehouses: ' + (warehouseError.response?.data?.message || warehouseError.message));
+            showToast('Product created but failed to add to warehouses: ' + (warehouseError.response?.data?.message || warehouseError.message), 'error');
             setLoading(false);
             return;
           }
@@ -151,7 +151,7 @@ const AddProductPage = () => {
         navigate('/products', { state: { success: 'Product created successfully' } });
       }
     } catch (err) {
-      setError(err.message || 'Failed to create product');
+      showToast(err.message || 'Failed to create product', 'error');
     } finally {
       setLoading(false);
     }
@@ -179,12 +179,7 @@ const AddProductPage = () => {
             </div>
           </div>
 
-          {/* Error Alert */}
-          {error && (
-            <div className="mt-4 rounded-md bg-red-50 p-4">
-              <p className="text-sm text-red-800">{error}</p>
-            </div>
-          )}
+          
         </div>
 
         {/* Form */}

@@ -5,6 +5,7 @@ import { LogBox } from 'react-native';
 import 'react-native-reanimated';
 
 import { AuthProvider } from '../src/context/AuthContext';
+import { ToastProvider } from '../src/context/ToastContext';
 import RootNavigator from '../src/navigation/RootNavigator';
 import ErrorBoundary from '../src/components/ErrorBoundary';
 
@@ -64,8 +65,10 @@ export default function Index() {
     <ErrorBoundary>
       <PaperProvider theme={theme}>
         <AuthProvider>
-          <RootNavigator />
-          <StatusBar style="auto" />
+          <ToastProvider>
+            <RootNavigator />
+            <StatusBar style="auto" />
+          </ToastProvider>
         </AuthProvider>
       </PaperProvider>
     </ErrorBoundary>

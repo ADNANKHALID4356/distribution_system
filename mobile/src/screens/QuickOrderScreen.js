@@ -20,8 +20,10 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import shopService from '../services/shopService';
+import { useToast } from '../context/ToastContext';
 
 const QuickOrderScreen = ({ navigation }) => {
+  const { showToast } = useToast();
   const { user } = useAuth(); // Use AuthContext instead of AsyncStorage
   const [shops, setShops] = useState([]);
   const [filteredShops, setFilteredShops] = useState([]);
@@ -88,7 +90,7 @@ const QuickOrderScreen = ({ navigation }) => {
       }
     } catch (error) {
       console.error('Error loading shops:', error);
-      Alert.alert('Error', 'Failed to load shops. Please try again.');
+      showToast('Failed to load shops. Please try again.', 'error');
     } finally {
       setLoading(false);
     }

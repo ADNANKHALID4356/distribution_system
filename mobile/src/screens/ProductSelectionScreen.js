@@ -24,8 +24,10 @@ import dbHelper from '../database/dbHelper';
 import orderService from '../services/orderService';
 import productService from '../services/productService';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 
 const ProductSelectionScreen = ({ route, navigation }) => {
+  const { showToast } = useToast();
   const { user } = useAuth();
   const { 
     shopId, 
@@ -107,12 +109,12 @@ const ProductSelectionScreen = ({ route, navigation }) => {
         
         setFilteredProducts(activeProducts);
         
-        Alert.alert('Success', result.message);
+        showToast(result.message, 'success');
       } else {
-        Alert.alert('Sync Failed', result.message);
+        showToast(result.message, 'error');
       }
     } catch (error) {
-      Alert.alert('Sync Error', 'Failed to sync products from server. Please check your internet connection and try again.');
+      showToast('Failed to sync products from server.', 'error');
     } finally {
       setRefreshing(false);
     }
@@ -190,11 +192,7 @@ const ProductSelectionScreen = ({ route, navigation }) => {
 
   const proceedToCart = () => {
     if (cart.length === 0) {
-      Alert.alert(
-        'Empty Cart',
-        'Please add at least one product to proceed',
-        [{ text: 'OK' }]
-      );
+      showToast('Please add at least one product to proceed', 'warning');
       return;
     }
     

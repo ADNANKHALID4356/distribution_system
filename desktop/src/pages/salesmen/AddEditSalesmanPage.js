@@ -5,11 +5,13 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { useToast } from '../../context/ToastContext';
 import { useNavigate, useParams } from 'react-router-dom';
 import salesmanService from '../../services/salesmanService';
 import './AddEditSalesmanPage.css';
 
 const AddEditSalesmanPage = () => {
+  const { showToast } = useToast();
   const navigate = useNavigate();
   const { id } = useParams();
   const isEditMode = !!id;
@@ -33,9 +35,7 @@ const AddEditSalesmanPage = () => {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-
+    
   useEffect(() => {
     if (isEditMode) {
       fetchSalesmanData();
@@ -73,8 +73,8 @@ const AddEditSalesmanPage = () => {
       }
     } catch (error) {
       console.error('Error fetching salesman:', error);
-      setError('Failed to fetch salesman data: ' + (error.response?.data?.message || error.message));
-      setTimeout(() => setError(''), 5000);
+      showToast('Failed to fetch salesman data: ' + (error.response?.data?.message || error.message), 'error');
+      setTimeout(() => {}, 5000);
     } finally {
       setLoading(false);
     }
@@ -161,8 +161,8 @@ const AddEditSalesmanPage = () => {
     e.preventDefault();
 
     if (!validateForm()) {
-      setError('Please fix the errors in the form');
-      setTimeout(() => setError(''), 5000);
+      showToast('Please fix the errors in the form', 'error');
+      setTimeout(() => {}, 5000);
       return;
     }
 
@@ -185,22 +185,22 @@ const AddEditSalesmanPage = () => {
       if (response.success) {
         if (!isEditMode && response.data.login_credentials) {
           // Show credentials to admin
-          setSuccess(
+          showToast(
             `✅ Salesman created successfully! ` +
             `Login Credentials - Username: ${response.data.login_credentials.username}, ` +
             `Password: ${response.data.login_credentials.password} - ` +
             `⚠️ IMPORTANT: Copy and share these credentials. Password cannot be retrieved later!`
-          );
+          , 'success');
           setTimeout(() => navigate('/salesmen'), 8000);
         } else {
-          setSuccess(isEditMode ? 'Salesman updated successfully!' : 'Salesman created successfully!');
+          showToast(isEditMode ? 'Salesman updated successfully!' : 'Salesman created successfully!', 'success');
           setTimeout(() => navigate('/salesmen'), 2000);
         }
       }
     } catch (error) {
       console.error('Error saving salesman:', error);
-      setError('Failed to save salesman: ' + (error.response?.data?.message || error.message));
-      setTimeout(() => setError(''), 5000);
+      showToast('Failed to save salesman: ' + (error.response?.data?.message || error.message), 'error');
+      setTimeout(() => {}, 5000);
     } finally {
       setLoading(false);
     }
@@ -215,21 +215,9 @@ const AddEditSalesmanPage = () => {
         </button>
       </div>
 
-      {/* Error Alert */}
-      {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 flex justify-between items-center">
-          <span>{error}</span>
-          <button onClick={() => setError('')} className="text-red-700 hover:text-red-900 font-bold">&times;</button>
-        </div>
-      )}
+      
 
-      {/* Success Alert */}
-      {success && (
-        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4 flex justify-between items-center">
-          <span>{success}</span>
-          <button onClick={() => setSuccess('')} className="text-green-700 hover:text-green-900 font-bold">&times;</button>
-        </div>
-      )}
+      
 
       <form className="salesman-form" onSubmit={handleSubmit}>
         <div className="form-section">

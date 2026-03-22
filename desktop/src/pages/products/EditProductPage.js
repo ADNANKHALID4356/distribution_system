@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
+import { useToast } from '../../context/ToastContext';
 import { useNavigate, useParams } from 'react-router-dom';
 import productService from '../../services/productService';
 import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 
 const EditProductPage = () => {
+  const { showToast } = useToast();
   const navigate = useNavigate();
   const { id } = useParams();
   const [loading, setLoading] = useState(false);
   const [fetchLoading, setFetchLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [categories, setCategories] = useState([]);
+    const [categories, setCategories] = useState([]);
   const [brands, setBrands] = useState([]);
   const [companies, setCompanies] = useState([]);
 
@@ -67,7 +68,7 @@ const EditProductPage = () => {
         if (brandsRes.success) setBrands(brandsRes.data);
         if (companiesRes.success) setCompanies(companiesRes.data);
       } catch (err) {
-        setError(err.message || 'Failed to load product data');
+        showToast(err.message || 'Failed to load product data', 'error');
       } finally {
         setFetchLoading(false);
       }
@@ -87,17 +88,16 @@ const EditProductPage = () => {
   // Handle form submit
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
     setLoading(true);
 
     // Validate required fields
     if (!formData.product_name) {
-      setError('Product name is required');
+      showToast('Product name is required', 'error');
       setLoading(false);
       return;
     }
     if (!formData.unit_price || formData.unit_price <= 0) {
-      setError('Valid unit price is required');
+      showToast('Valid unit price is required', 'error');
       setLoading(false);
       return;
     }
@@ -129,7 +129,7 @@ const EditProductPage = () => {
         navigate('/products', { state: { success: 'Product updated successfully' } });
       }
     } catch (err) {
-      setError(err.message || 'Failed to update product');
+      showToast(err.message || 'Failed to update product', 'error');
     } finally {
       setLoading(false);
     }
@@ -168,12 +168,7 @@ const EditProductPage = () => {
             </div>
           </div>
 
-          {/* Error Alert */}
-          {error && (
-            <div className="mt-4 rounded-md bg-red-50 p-4">
-              <p className="text-sm text-red-800">{error}</p>
-            </div>
-          )}
+          
         </div>
 
         {/* Form */}

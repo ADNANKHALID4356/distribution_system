@@ -2,6 +2,7 @@
 // Clean, clear, systematic implementation
 
 import React, { useState, useEffect } from 'react';
+import { useToast } from '../../context/ToastContext';
 import { useNavigate } from 'react-router-dom';
 import { 
   FileSpreadsheet, Truck, Calendar, Package, Download, 
@@ -13,6 +14,7 @@ import warehouseService from '../../services/warehouseService';
 import loadSheetService from '../../services/loadSheetService';
 
 const LoadSheetPage = () => {
+  const { showToast } = useToast();
   const navigate = useNavigate();
   
   // State

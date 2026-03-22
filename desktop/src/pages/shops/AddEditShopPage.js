@@ -1,17 +1,18 @@
 import React, { useState, useEffect } from 'react';
+import { useToast } from '../../context/ToastContext';
 import { useNavigate, useParams } from 'react-router-dom';
 import shopService from '../../services/shopService';
 import routeService from '../../services/routeService';
 
 const AddEditShopPage = () => {
+  const { showToast } = useToast();
   const navigate = useNavigate();
   const { id } = useParams();
   const isEditMode = Boolean(id);
 
   const [routes, setRoutes] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [formData, setFormData] = useState({
+    const [formData, setFormData] = useState({
     shop_code: '',
     shop_name: '',
     owner_name: '',
@@ -54,16 +55,16 @@ const AddEditShopPage = () => {
         setRoutes(response.data);
         
         if (response.data.length === 0) {
-          setError('No routes found in database. Please add routes first from Route Management page.');
+          showToast('No routes found in database. Please add routes first from Route Management page.', 'error');
         }
       } else {
         console.error('Invalid response structure:', response);
-        setError('Failed to load routes. Invalid response from server.');
+        showToast('Failed to load routes. Invalid response from server.', 'error');
       }
     } catch (err) {
       console.error('Fetch routes error:', err);
       const errorMsg = err.message || err.error || 'Failed to fetch routes from server';
-      setError(`Route Loading Error: ${errorMsg}. Please check if backend is running and routes exist in database.`);
+      showToast(`Route Loading Error: ${errorMsg}. Please check if backend is running and routes exist in database.`, 'error');
     }
   };
 
@@ -92,7 +93,7 @@ const AddEditShopPage = () => {
         is_active: shop.is_active !== undefined ? shop.is_active : true
       });
     } catch (err) {
-      setError(err.message || 'Failed to fetch shop data');
+      showToast(err.message || 'Failed to fetch shop data', 'error');
     } finally {
       setLoading(false);
     }
@@ -110,7 +111,6 @@ const AddEditShopPage = () => {
     e.preventDefault();
     try {
       setLoading(true);
-      setError('');
 
       const submitData = {
         ...formData,
@@ -127,7 +127,7 @@ const AddEditShopPage = () => {
 
       navigate('/shops');
     } catch (err) {
-      setError(err.message || 'Failed to save shop');
+      showToast(err.message || 'Failed to save shop', 'error');
     } finally {
       setLoading(false);
     }
@@ -159,15 +159,10 @@ const AddEditShopPage = () => {
         </div>
       )}
 
-      {/* Error Alert */}
-      {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-          <strong>Error:</strong> {error}
-        </div>
-      )}
+      
 
       {/* No Routes Warning */}
-      {!loading && routes.length === 0 && !error && (
+      {!loading && routes.length === 0 && (
         <div className="bg-yellow-100 border border-yellow-400 text-yellow-800 px-4 py-3 rounded mb-4">
           <div className="flex items-center justify-between">
             <div>

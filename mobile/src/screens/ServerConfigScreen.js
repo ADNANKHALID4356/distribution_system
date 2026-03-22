@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
 import { Text, TextInput, Button, Card, HelperText, ActivityIndicator, Divider, IconButton } from 'react-native-paper';
 import { getServerConfig, setServerConfig, testServerConnection, getDefaultConfig } from '../utils/serverConfig';
+import { useToast } from '../context/ToastContext';
 
 const ServerConfigScreen = ({ navigation }) => {
+  const { showToast } = useToast();
   // Use production defaults as initial state (VPS: 147.93.108.205:5001)
   const [config, setConfig] = useState(getDefaultConfig());
   const [loading, setLoading] = useState(true);
@@ -36,11 +38,7 @@ const ServerConfigScreen = ({ navigation }) => {
     setTesting(false);
 
     if (result.success) {
-      Alert.alert(
-        '✅ Connection Successful',
-        `Server is reachable!\n\nCompany: ${result.data?.company}\nStatus: ${result.data?.status}`,
-        [{ text: 'OK' }]
-      );
+      showToast('✅ Connection Successful! Server is reachable.', 'success');
     } else {
       Alert.alert(
         '❌ Connection Failed',
@@ -52,7 +50,7 @@ const ServerConfigScreen = ({ navigation }) => {
 
   const handleSave = async () => {
     if (!config.host || !config.port) {
-      Alert.alert('Validation Error', 'Please enter both host and port');
+      showToast('Please enter both host and port', 'warning');
       return;
     }
 
@@ -72,7 +70,7 @@ const ServerConfigScreen = ({ navigation }) => {
         ]
       );
     } else {
-      Alert.alert('Error', 'Failed to save configuration: ' + result.error);
+      showToast('Failed to save configuration: ' + result.error, 'error');
     }
   };
 

@@ -3,7 +3,7 @@
 
 const SERVER_CONFIG_KEY = 'serverConfig';
 const CONFIG_VERSION_KEY = 'serverConfigVersion';
-const CURRENT_CONFIG_VERSION = 7; // Increment this to force reset old configs
+const CURRENT_CONFIG_VERSION = 8; // Increment this to force reset old configs
 
 // Default configuration
 // IMPORTANT: Update this before building for production distribution
@@ -15,6 +15,28 @@ const DEFAULT_CONFIG = {
   host: '147.93.108.205',  // VPS Production Server
   port: '5001',            // Backend API port
   protocol: 'http'         // HTTP
+};
+
+const normalizeConfig = (config) => {
+  if (!config || typeof config !== 'object') {
+    return null;
+  }
+
+  const protocol = config.protocol === 'https' ? 'https' : 'http';
+  const host = String(config.host || '').trim();
+  const port = String(config.port || '').trim();
+
+  if (!host || !port) {
+    return null;
+  }
+
+  return { protocol, host, port };
+};
+
+const isLocalHostConfig = (config) => {
+  if (!config || !config.host) return false;
+  const host = String(config.host).toLowerCase();
+  return host === 'localhost' || host === '127.0.0.1';
 };
 
 // Local Development Server - uncomment for local testing:
@@ -40,6 +62,18 @@ const checkConfigVersion = () => {
       localStorage.removeItem(SERVER_CONFIG_KEY);
       localStorage.setItem(CONFIG_VERSION_KEY, CURRENT_CONFIG_VERSION.toString());
       console.log('🔄 Server config reset to new defaults (version upgrade)');
+      return;
+    }
+
+    // Auto-heal stale local config when app defaults are production backend.
+    const stored = localStorage.getItem(SERVER_CONFIG_KEY);
+    if (stored) {
+      const parsed = normalizeConfig(JSON.parse(stored));
+      const defaultIsRemote = !isLocalHostConfig(DEFAULT_CONFIG);
+      if (!parsed || (defaultIsRemote && isLocalHostConfig(parsed))) {
+        localStorage.removeItem(SERVER_CONFIG_KEY);
+        console.log('🔄 Server config reset to production defaults');
+      }
     }
   } catch (error) {
     console.error('Error checking config version:', error);
@@ -53,17 +87,24 @@ export const getServerConfig = () => {
   try {
     const stored = localStorage.getItem(SERVER_CONFIG_KEY);
     if (stored) {
-      return JSON.parse(stored);
+      const parsed = normalizeConfig(JSON.parse(stored));
+      if (parsed) {
+        return parsed;
+      }
     }
   } catch (error) {
     console.error('Error reading server config:', error);
   }
-  return DEFAULT_CONFIG;
+  return normalizeConfig(DEFAULT_CONFIG) || DEFAULT_CONFIG;
 };
 
 export const setServerConfig = (config) => {
   try {
-    localStorage.setItem(SERVER_CONFIG_KEY, JSON.stringify(config));
+    const normalized = normalizeConfig(config);
+    if (!normalized) {
+      return false;
+    }
+    localStorage.setItem(SERVER_CONFIG_KEY, JSON.stringify(normalized));
     return true;
   } catch (error) {
     console.error('Error saving server config:', error);

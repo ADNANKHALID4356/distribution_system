@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from 'react';
+import { useToast } from '../../context/ToastContext';
 import { useNavigate } from 'react-router-dom';
 import shopService from '../../services/shopService';
 import routeService from '../../services/routeService';
 
 const ShopListingPage = () => {
+  const { showToast } = useToast();
   const navigate = useNavigate();
   const [shops, setShops] = useState([]);
   const [routes, setRoutes] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  
+      
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [filterRoute, setFilterRoute] = useState('');
@@ -30,10 +30,9 @@ const ShopListingPage = () => {
       ]);
       setShops(shopsResponse.data);
       setRoutes(routesResponse.data);
-      setError('');
     } catch (err) {
-      setError(err.message || 'Failed to fetch data');
-      setTimeout(() => setError(''), 5000);
+      showToast(err.message || 'Failed to fetch data', 'error');
+      setTimeout(() => {}, 5000);
       console.error('Fetch error:', err);
     } finally {
       setLoading(false);
@@ -55,10 +54,9 @@ const ShopListingPage = () => {
       
       const response = await shopService.getAllShops(params);
       setShops(response.data);
-      setError('');
     } catch (err) {
-      setError(err.message || 'Failed to search shops');
-      setTimeout(() => setError(''), 5000);
+      showToast(err.message || 'Failed to search shops', 'error');
+      setTimeout(() => {}, 5000);
     } finally {
       setLoading(false);
     }
@@ -85,8 +83,8 @@ const ShopListingPage = () => {
       await shopService.deleteShop(id, false);
       
       // Success - shop deleted
-      setSuccess(`Shop "${shopName}" deleted successfully`);
-      setTimeout(() => setSuccess(''), 5000);
+      showToast(`Shop "${shopName}" deleted successfully`, 'success');
+      setTimeout(() => {}, 5000);
       fetchInitialData();
       
     } catch (err) {
@@ -99,12 +97,12 @@ const ShopListingPage = () => {
         if (deliveries > 0) dependencyMsg.push(`${deliveries} delivery(ies)`);
         
         // Shop has dependencies - inform user
-        setError(`Cannot delete shop "${shopName}": has ${dependencyMsg.join(', ')}`);
-        setTimeout(() => setError(''), 8000);
+        showToast(`Cannot delete shop "${shopName}": has ${dependencyMsg.join(', ')}`, 'error');
+        setTimeout(() => {}, 8000);
       } else {
         // Other error
-        setError(err.message || 'Failed to delete shop');
-        setTimeout(() => setError(''), 5000);
+        showToast(err.message || 'Failed to delete shop', 'error');
+        setTimeout(() => {}, 5000);
         console.error('Delete error:', err);
       }
     } finally {
@@ -266,21 +264,9 @@ const ShopListingPage = () => {
         </div>
       </div>
 
-      {/* Error Alert */}
-      {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 no-print flex justify-between items-center">
-          <span>{error}</span>
-          <button onClick={() => setError('')} className="text-red-700 hover:text-red-900 font-bold">&times;</button>
-        </div>
-      )}
+      
 
-      {/* Success Alert */}
-      {success && (
-        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4 no-print flex justify-between items-center">
-          <span>{success}</span>
-          <button onClick={() => setSuccess('')} className="text-green-700 hover:text-green-900 font-bold">&times;</button>
-        </div>
-      )}
+      
 
       {/* Filters */}
       <div className="bg-white rounded-lg shadow p-4 mb-6 no-print">

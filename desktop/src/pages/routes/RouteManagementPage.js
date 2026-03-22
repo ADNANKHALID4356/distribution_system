@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
+import { useToast } from '../../context/ToastContext';
 import { useNavigate } from 'react-router-dom';
 import routeService from '../../services/routeService';
 
 const RouteManagementPage = () => {
+  const { showToast } = useToast();
   const navigate = useNavigate();
   const [routes, setRoutes] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [showModal, setShowModal] = useState(false);
+    const [showModal, setShowModal] = useState(false);
   const [editingRoute, setEditingRoute] = useState(null);
   const [formData, setFormData] = useState({
     route_code: '',
@@ -25,9 +26,8 @@ const RouteManagementPage = () => {
       setLoading(true);
       const response = await routeService.getAllRoutes({ limit: 100 });
       setRoutes(response.data);
-      setError('');
     } catch (err) {
-      setError(err.message || 'Failed to fetch routes');
+      showToast(err.message || 'Failed to fetch routes', 'error');
       console.error('Fetch routes error:', err);
     } finally {
       setLoading(false);
@@ -54,7 +54,7 @@ const RouteManagementPage = () => {
       resetForm();
       fetchRoutes();
     } catch (err) {
-      setError(err.message || 'Failed to save route');
+      showToast(err.message || 'Failed to save route', 'error');
     }
   };
 
@@ -74,7 +74,7 @@ const RouteManagementPage = () => {
       await routeService.deleteRoute(id);
       fetchRoutes();
     } catch (err) {
-      setError(err.message || 'Failed to delete route');
+      showToast(err.message || 'Failed to delete route', 'error');
     }
   };
 
@@ -118,12 +118,7 @@ const RouteManagementPage = () => {
         </div>
       </div>
 
-      {/* Error Alert */}
-      {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-          {error}
-        </div>
-      )}
+      
 
       {/* Routes Table */}
       <div className="bg-white rounded-lg shadow overflow-hidden">

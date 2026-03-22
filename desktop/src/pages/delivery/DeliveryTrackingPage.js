@@ -2,6 +2,7 @@
 // Purpose: Track and manage all delivery challans
 
 import React, { useState, useEffect } from 'react';
+import { useToast } from '../../context/ToastContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   Truck, Package, Eye, Filter, 
@@ -15,6 +16,7 @@ import settingsService from '../../services/settingsService';
 import { printChallan, downloadChallan } from '../../utils/pdfGeneratorNew';
 
 const DeliveryTrackingPage = () => {
+  const { showToast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
   
@@ -27,9 +29,7 @@ const DeliveryTrackingPage = () => {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  
+      
   // Bulk delete states
   const [selectedDeliveries, setSelectedDeliveries] = useState(new Set());
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
@@ -161,8 +161,8 @@ const DeliveryTrackingPage = () => {
     console.log('🖨️ Print button clicked');
     
     if (!selectedDelivery) {
-      setError('No delivery selected');
-      setTimeout(() => setError(''), 5000);
+      showToast('No delivery selected', 'error');
+      setTimeout(() => {}, 5000);
       return;
     }
     
@@ -170,8 +170,8 @@ const DeliveryTrackingPage = () => {
       const printWindow = window.open('', '_blank');
       
       if (!printWindow) {
-        setError('Pop-up blocked! Please allow pop-ups.');
-        setTimeout(() => setError(''), 5000);
+        showToast('Pop-up blocked! Please allow pop-ups.', 'error');
+        setTimeout(() => {}, 5000);
         return;
       }
 
@@ -555,8 +555,8 @@ const DeliveryTrackingPage = () => {
       console.log('✅ Print window created successfully');
     } catch (error) {
       console.error('❌ Print error:', error);
-      setError('Error: ' + error.message);
-      setTimeout(() => setError(''), 5000);
+      showToast('Error: ' + error.message, 'error');
+      setTimeout(() => {}, 5000);
     }
   };
 
@@ -779,21 +779,9 @@ const DeliveryTrackingPage = () => {
         </div>
       )}
 
-      {/* Error Alert */}
-      {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 flex justify-between items-center">
-          <span>{error}</span>
-          <button onClick={() => setError('')} className="text-red-700 hover:text-red-900 font-bold">&times;</button>
-        </div>
-      )}
+      
 
-      {/* Success Alert */}
-      {success && (
-        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4 flex justify-between items-center">
-          <span>{success}</span>
-          <button onClick={() => setSuccess('')} className="text-green-700 hover:text-green-900 font-bold">&times;</button>
-        </div>
-      )}
+      
 
       {/* Statistics Cards */}
       {statistics && (

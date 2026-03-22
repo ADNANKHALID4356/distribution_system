@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { LockClosedIcon, UserIcon, CogIcon } from '@heroicons/react/24/outline';
 import ServerConfigDialog from '../components/ServerConfigDialog';
-import { getServerUrl } from '../utils/serverConfig';
+import { getServerUrl, resetServerConfig } from '../utils/serverConfig';
 
 const LoginPage = () => {
   const [username, setUsername] = useState('');
@@ -149,6 +149,17 @@ const LoginPage = () => {
             >
               <CogIcon className="h-4 w-4" />
               Server Settings
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                resetServerConfig();
+                window.location.reload();
+              }}
+              className="flex items-center justify-center gap-2 mx-auto px-4 py-1 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
+            >
+              Reset Server Cache
             </button>
             
             <p className="text-xs text-gray-400">
