@@ -6,6 +6,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useToast } from '../../context/ToastContext';
 import invoiceService from '../../services/invoiceService';
 import shopService from '../../services/shopService';
 import InvoiceDetailModal from '../../components/invoices/InvoiceDetailModal';
@@ -13,6 +14,7 @@ import PaymentRecordModal from '../../components/invoices/PaymentRecordModal';
 
 const InvoiceListingPage = () => {
   const navigate = useNavigate();
+  const { showToast } = useToast();
   
   // State management
   const [invoices, setInvoices] = useState([]);
@@ -238,45 +240,27 @@ const InvoiceListingPage = () => {
         if (payments > 0) dependencyMsg.push(`${payments} payment record(s)`);
         if (deliveries > 0) dependencyMsg.push(`${deliveries} delivery(ies)`);
         
-        // Show admin override confirmation
-        const forceDelete = window.confirm(
-          `⚠️ WARNING: This invoice has existing data:\n\n` +
-          `${dependencyMsg.join('\n')}\n\n` +
-          `🔴 ADMIN OVERRIDE REQUIRED:\n` +
-          `Clicking OK will permanently delete:\n` +
-          `- The invoice\n` +
-          `- All payment records\n` +
-          `- Delivery associations will be cleared\n\n` +
-          `This action CANNOT be undone!\n\n` +
-          `Do you want to proceed with force deletion?`
-        );
+        // Show warning toast about admin override instead of alert
+        const warning = `⚠️ WARNING: This invoice has existing data:\n${dependencyMsg.join('\n')}\n\nADMIN OVERRIDE REQUIRED:\n- The invoice\n- All payment records\nwill be permanently deleted!`;
+        showToast(warning, 'warning');
         
-        if (forceDelete) {
-          try {
-            setLoading(true);
-            const result = await invoiceService.deleteInvoice(invoiceId, true);
-            
-            setSuccess(
-              `Invoice cancelled successfully (Admin Override)\n\n` +
-              `Deleted:\n` +
-              `- ${result.deleted?.payments || 0} payment(s)\n` +
-              `- ${result.deleted?.deliveries || 0} delivery association(s)`
-            );
-            
-            loadInvoices();
-            loadStatistics();
-            setTimeout(() => setSuccess(''), 5000);
-          } catch (forceErr) {
-            setError(forceErr.response?.data?.message || 'Failed to force delete invoice.');
-            setTimeout(() => setError(''), 3000);
-          } finally {
-            setLoading(false);
-          }
+        // Attempt force delete instead of prompting
+        try {
+          setLoading(true);
+          const result = await invoiceService.deleteInvoice(invoiceId, true);
+          
+          showToast(`Invoice cancelled successfully (Admin Override)\n\nDeleted:\n- ${result.deleted?.payments || 0} payment(s)\n- ${result.deleted?.deliveries || 0} delivery association(s)`, 'success');
+          
+          loadInvoices();
+          loadStatistics();
+        } catch (forceErr) {
+          showToast(forceErr.response?.data?.message || 'Failed to force delete invoice.', 'error');
+        } finally {
+          setLoading(false);
         }
       } else {
         // Other error
-        setError(err.response?.data?.message || 'Failed to cancel invoice.');
-        setTimeout(() => setError(''), 3000);
+        showToast(err.response?.data?.message || 'Failed to cancel invoice.', 'error');
       }
     } finally {
       setLoading(false);

@@ -34,12 +34,6 @@ const DeliveryChallanPage = () => {
   const [formData, setFormData] = useState({
     warehouse_id: '',
     delivery_date: new Date().toISOString().split('T')[0],
-    driver_name: '',
-    driver_phone: '',
-    driver_cnic: '',
-    vehicle_number: '',
-    vehicle_type: 'truck',
-    notes: '',
     status: 'pending'
   });
   
@@ -212,11 +206,6 @@ const DeliveryChallanPage = () => {
         return;
       }
       
-      if (!formData.driver_name || !formData.vehicle_number) {
-        setMessage({ type: 'error', text: 'Please enter driver name and vehicle number' });
-        return;
-      }
-      
       console.log('🚀 Creating delivery challan from order:', selectedOrderId);
       console.log('📦 Delivery data:', formData);
       
@@ -226,12 +215,6 @@ const DeliveryChallanPage = () => {
         {
           warehouse_id: formData.warehouse_id,
           delivery_date: formData.delivery_date,
-          driver_name: formData.driver_name,
-          driver_phone: formData.driver_phone,
-          driver_cnic: formData.driver_cnic,
-          vehicle_number: formData.vehicle_number,
-          vehicle_type: formData.vehicle_type,
-          notes: formData.notes,
           status: formData.status
         }
       );
@@ -407,11 +390,11 @@ const DeliveryChallanPage = () => {
 
         {/* Right Column - Delivery Details & Items */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Delivery Information */}
+          {/* Basic Delivery Settings */}
           <div className="bg-white rounded-lg shadow-md p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <Truck className="h-5 w-5" />
-              Delivery Information
+              Delivery Settings
             </h2>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -449,103 +432,6 @@ const DeliveryChallanPage = () => {
                   required
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
-              </div>
-
-              {/* Driver Name */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Driver Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  name="driver_name"
-                  value={formData.driver_name}
-                  onChange={handleInputChange}
-                  placeholder="Enter driver name"
-                  required
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              {/* Driver Phone */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Driver Phone <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="tel"
-                  name="driver_phone"
-                  value={formData.driver_phone}
-                  onChange={handleInputChange}
-                  placeholder="03XX-XXXXXXX"
-                  required
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              {/* Driver CNIC */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Driver CNIC
-                </label>
-                <input
-                  type="text"
-                  name="driver_cnic"
-                  value={formData.driver_cnic}
-                  onChange={handleInputChange}
-                  placeholder="XXXXX-XXXXXXX-X"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              {/* Vehicle Number */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Vehicle Number <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  name="vehicle_number"
-                  value={formData.vehicle_number}
-                  onChange={handleInputChange}
-                  placeholder="ABC-123"
-                  required
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              {/* Vehicle Type */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Vehicle Type
-                </label>
-                <select
-                  name="vehicle_type"
-                  value={formData.vehicle_type}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="truck">Truck</option>
-                  <option value="van">Van</option>
-                  <option value="pickup">Pickup</option>
-                  <option value="bike">Bike</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
-
-              {/* Notes */}
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Notes
-                </label>
-                <textarea
-                  name="notes"
-                  value={formData.notes}
-                  onChange={handleInputChange}
-                  rows="2"
-                  placeholder="Any special delivery instructions..."
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                ></textarea>
               </div>
             </div>
           </div>

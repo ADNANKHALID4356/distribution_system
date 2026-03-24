@@ -265,6 +265,53 @@ exports.updateProduct = async (req, res) => {
   }
 };
 
+// Add stock endpoint that does not require full product fields
+exports.addStock = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { add_quantity } = req.body;
+
+    if (add_quantity === undefined || add_quantity === null || Number.isNaN(Number(add_quantity))) {
+      return res.status(400).json({
+        success: false,
+        message: 'add_quantity is required and must be a number'
+      });
+    }
+
+    const delta = parseFloat(add_quantity);
+    if (delta <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'add_quantity must be greater than 0'
+      });
+    }
+
+    const existingProduct = await Product.findById(id);
+    if (!existingProduct) {
+      return res.status(404).json({
+        success: false,
+        message: 'Product not found'
+      });
+    }
+
+    const newStock = (existingProduct.stock_quantity || 0) + delta;
+
+    const updatedProduct = await Product.updateStock(id, newStock);
+    res.json({
+      success: true,
+      message: 'Product stock updated successfully',
+      data: updatedProduct
+    });
+  } catch (error) {
+    console.error('Add stock error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error adding stock',
+      error: error.message
+    });
+  }
+};
+
 // @desc    Delete product (soft delete)
 // @route   DELETE /api/desktop/products/:id
 // @access  Private

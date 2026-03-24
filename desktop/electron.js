@@ -11,31 +11,28 @@ let backendProcess;
 function startBackend() {
   console.log('🚀 Starting backend server...');
   
-  // Determine backend executable path9
-  // In packaged app, it's in resources
-  const isDev = !app.isPackaged;
-  const backendExePath = isDev
-    ? path.join(__dirname, 'backend-standalone', 'backend.exe')
-    : path.join(process.resourcesPath, 'backend-standalone', 'backend.exe');
+  // Use Node.js backend instead of executable
+  const backendPath = path.join(__dirname, '..', 'backend');
+  const serverPath = path.join(backendPath, 'server.js');
   
-  console.log(`📂 Backend path: ${backendExePath}`);
+  console.log(`📂 Backend path: ${serverPath}`);
   
   // Check if backend exists
-  if (!fs.existsSync(backendExePath)) {
-    console.error('❌ Backend executable not found!');
-    console.error(`   Expected at: ${backendExePath}`);
-    return Promise.reject(new Error('Backend executable not found'));
+  if (!fs.existsSync(serverPath)) {
+    console.error('❌ Backend server.js not found!');
+    console.error(`   Expected at: ${serverPath}`);
+    return Promise.reject(new Error('Backend server.js not found'));
   }
   
   // Start backend process
-  backendProcess = spawn(backendExePath, [], {
+  backendProcess = spawn('node', [serverPath], {
+    cwd: backendPath,
     env: {
       ...process.env,
       NODE_ENV: 'production',
       USE_SQLITE: 'true',
       PORT: '5000'
     },
-    cwd: path.dirname(backendExePath),
     stdio: 'pipe'
   });
 
@@ -87,14 +84,38 @@ function createWindow() {
     title: 'Distribution Management System'
   });
 
-  // Load the React app
-  const startUrl = url.format({
-    pathname: path.join(__dirname, 'build', 'index.html'),
-    protocol: 'file:',
-    slashes: true,
-  });
+  // Load the React app using loadFile (more reliable than loadURL)
+  const filePath = path.join(__dirname, 'build', 'index.html');
+  console.log(`📂 Loading app from: ${filePath}`);
+  
+  if (!fs.existsSync(filePath)) {
+    console.error('❌ ERROR: Build folder not found!');
+    console.error(`   Expected: ${filePath}`);
+    console.error('   Please run: npm run build');
+    mainWindow.loadURL('data:text/html,<h1>Error: Build folder not found</h1><p>Please run: npm run build</p>');
+  } else {
+    mainWindow.loadFile(filePath);
+  }
 
-  mainWindow.loadURL(startUrl);
+  // Show window when ready
+  mainWindow.once('ready-to-show', () => {
+    console.log('✅ Window ready to show');
+    mainWindow.show();
+    mainWindow.focus();
+  });
+  
+  // Handle page load errors
+  mainWindow.webContents.on('crashed', () => {
+    console.error('❌ Renderer process crashed');
+  });
+  
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+    console.error(`❌ Failed to load: ${errorDescription} (code: ${errorCode})`);
+  });
+  
+  mainWindow.webContents.on('did-finish-load', () => {
+    console.log('✅ Page finished loading');
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;

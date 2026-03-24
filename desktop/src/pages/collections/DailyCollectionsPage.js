@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import dailyCollectionService from '../../services/dailyCollectionService';
+import { useToast } from '../../context/ToastContext';
 import {
   ArrowLeftIcon,
   ArrowPathIcon,
@@ -15,12 +16,11 @@ import {
 
 const DailyCollectionsPage = () => {
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const [collections, setCollections] = useState([]);
   const [todaySummary, setTodaySummary] = useState(null);
   const [dailySummary, setDailySummary] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
 
   // Form state
   const [showForm, setShowForm] = useState(false);
@@ -57,7 +57,7 @@ const DailyCollectionsPage = () => {
       setTodaySummary(todayRes.data || null);
       setDailySummary(summaryRes.data || []);
     } catch (err) {
-      setError(err.message || 'Failed to fetch data');
+      showToast(err.message || 'Failed to fetch data', 'error');
     } finally {
       setLoading(false);
     }
@@ -70,24 +70,23 @@ const DailyCollectionsPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.amount || parseFloat(formData.amount) <= 0) {
-      setError('Please enter a valid amount');
+      showToast('Please enter a valid amount', 'error');
       return;
     }
 
     setSubmitting(true);
-    setError('');
     try {
       if (editingId) {
         await dailyCollectionService.updateCollection(editingId, formData);
-        setSuccess('Collection updated successfully!');
+        showToast('Collection updated successfully!', 'success');
       } else {
         await dailyCollectionService.createCollection(formData);
-        setSuccess('Collection recorded successfully!');
+        showToast('Collection recorded successfully!', 'success');
       }
       resetForm();
       fetchData();
     } catch (err) {
-      setError(err.message || 'Failed to save collection');
+      showToast(err.message || 'Failed to save collection', 'error');
     } finally {
       setSubmitting(false);
     }
@@ -107,13 +106,12 @@ const DailyCollectionsPage = () => {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this collection entry?')) return;
     try {
       await dailyCollectionService.deleteCollection(id);
-      setSuccess('Collection deleted successfully');
+      showToast('Collection deleted successfully', 'success');
       fetchData();
     } catch (err) {
-      setError(err.message || 'Failed to delete collection');
+      showToast(err.message || 'Failed to delete collection', 'error');
     }
   };
 
@@ -165,22 +163,6 @@ const DailyCollectionsPage = () => {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* Messages */}
-        {error && (
-          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3">
-            <XCircleIcon className="h-5 w-5 text-red-500 flex-shrink-0" />
-            <span className="text-red-700">{error}</span>
-            <button onClick={() => setError('')} className="ml-auto"><XCircleIcon className="h-5 w-5 text-red-400" /></button>
-          </div>
-        )}
-        {success && (
-          <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-xl flex items-center gap-3">
-            <CheckCircleIcon className="h-5 w-5 text-green-500 flex-shrink-0" />
-            <span className="text-green-700">{success}</span>
-            <button onClick={() => setSuccess('')} className="ml-auto"><XCircleIcon className="h-5 w-5 text-green-400" /></button>
-          </div>
-        )}
-
         {/* Today's Summary Card */}
         {todaySummary && (
           <div className="bg-gradient-to-r from-green-600 to-emerald-700 rounded-2xl p-6 mb-6 text-white shadow-xl">

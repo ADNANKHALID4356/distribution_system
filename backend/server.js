@@ -184,10 +184,11 @@ app.use((req, res) => {
   });
 });
 
-const PORT = process.env.PORT || 5000;
-// Bind to specific VPS IP address for security
-// Only accessible via this IP address, not all network interfaces
-const HOST = process.env.HOST || '147.93.108.205'; // VPS IP address
+const PORT = process.env.PORT || 5001;
+// Bind to all interfaces unless specifically overridden by HOST.
+// This ensures the server is accessible from localhost and network interface IPs.
+const HOST = process.env.HOST || '0.0.0.0';
+console.log(`[server] using host=${HOST} port=${PORT}`);
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {

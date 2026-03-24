@@ -84,6 +84,15 @@ const productService = {
     }
   },
 
+  addStock: async (id, quantity) => {
+    try {
+      const response = await api.put(`/desktop/products/${id}/add-stock`, { add_quantity: quantity });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || error;
+    }
+  },
+
   /**
    * Delete product (soft delete - sets is_active = false)
    * @param {number} id - Product ID

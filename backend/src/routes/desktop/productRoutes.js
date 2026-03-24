@@ -17,7 +17,8 @@ const {
   getBrands,
   getCompanies,
   bulkImportProducts,
-  getProductWarehouseStock
+  getProductWarehouseStock,
+  addStock
 } = require('../../controllers/productController');
 
 // All routes require authentication
@@ -72,6 +73,11 @@ router.post('/', authorize('Admin', 'Manager'), createProduct);
 // @desc    Update product
 // @access  Private (Admin, Manager)
 router.put('/:id', authorize('Admin', 'Manager'), updateProduct);
+
+// @route   PUT /api/desktop/products/:id/add-stock
+// @desc    Add stock to existing product
+// @access  Private (Admin, Manager)
+router.put('/:id/add-stock', authorize('Admin', 'Manager'), addStock);
 
 // @route   DELETE /api/desktop/products/:id
 // @desc    Delete product (soft delete)

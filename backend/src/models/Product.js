@@ -384,6 +384,14 @@ const Product = {
   },
 
   /**
+   * Update product stock quantity only
+   */
+  async updateStock(id, stock_quantity) {
+    await db.query('UPDATE products SET stock_quantity = ? WHERE id = ?', [stock_quantity, id]);
+    return await this.findById(id);
+  },
+
+  /**
    * Soft delete product (set is_active = FALSE)
    */
   async softDelete(id) {

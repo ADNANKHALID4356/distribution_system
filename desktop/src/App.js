@@ -9,6 +9,7 @@ import ProductListPage from './pages/products/ProductListPage';
 import AddProductPage from './pages/products/AddProductPage';
 import EditProductPage from './pages/products/EditProductPage';
 import BulkImportPage from './pages/products/BulkImportPage';
+import AddStockPage from './pages/products/AddStockPage';
 import RouteManagementPage from './pages/routes/RouteManagementPage';
 import ShopListingPage from './pages/shops/ShopListingPage';
 import AddEditShopPage from './pages/shops/AddEditShopPage';
@@ -75,6 +76,14 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['Admin', 'Manager']}>
                 <BulkImportPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/products/add-stock"
+            element={
+              <ProtectedRoute allowedRoles={['Admin', 'Manager']}>
+                <AddStockPage />
               </ProtectedRoute>
             }
           />

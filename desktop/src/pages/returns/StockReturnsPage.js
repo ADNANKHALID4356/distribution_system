@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 import stockReturnService from '../../services/stockReturnService';
 import deliveryService from '../../services/deliveryService';
 import {
@@ -16,6 +17,8 @@ import {
 
 const StockReturnsPage = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'Admin' || user?.role === 'Manager';
   const [activeTab, setActiveTab] = useState('process'); // 'list' or 'process'
   const [returns, setReturns] = useState([]);
   const [statistics, setStatistics] = useState(null);

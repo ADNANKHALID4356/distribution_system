@@ -26,7 +26,7 @@ export const ToastProvider = ({ children }) => {
       {children}
       <Snackbar
         open={open}
-        autoHideDuration={4000}
+        autoHideDuration={5000}
         onClose={handleClose}
         anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
       >

@@ -23,8 +23,8 @@ const LoadSheetPage = () => {
   const [consolidatedProducts, setConsolidatedProducts] = useState([]);
   const [savedLoadSheets, setSavedLoadSheets] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState({ type: '', text: '' });
   const [showPreview, setShowPreview] = useState(false);
+  const [message, setMessage] = useState({ type: '', text: '' });
   
   // Filters
   const [filters, setFilters] = useState({
@@ -78,11 +78,7 @@ const LoadSheetPage = () => {
   const handleDeleteLoadSheet = async (sheetId, sheetNumber, status) => {
     // Only allow deleting draft load sheets
     if (status !== 'draft' && status !== 'pending') {
-      setMessage({ type: 'error', text: 'Only draft load sheets can be deleted' });
-      return;
-    }
-
-    if (!window.confirm(`Are you sure you want to delete Load Sheet #${sheetNumber}?\n\nThis action cannot be undone.`)) {
+      showToast('Only draft load sheets can be deleted', 'error');
       return;
     }
 
@@ -91,15 +87,12 @@ const LoadSheetPage = () => {
       const response = await loadSheetService.deleteLoadSheet(sheetId);
       
       if (response.success) {
-        setMessage({ type: 'success', text: `Load Sheet #${sheetNumber} deleted successfully` });
+        showToast(`Load Sheet #${sheetNumber} deleted successfully`, 'success');
         fetchSavedLoadSheets(); // Refresh list
       }
     } catch (error) {
       console.error('Delete load sheet error:', error);
-      setMessage({ 
-        type: 'error', 
-        text: error.response?.data?.message || 'Failed to delete load sheet' 
-      });
+      showToast(error.response?.data?.message || 'Failed to delete load sheet', 'error');
     } finally {
       setLoading(false);
     }
@@ -135,18 +128,17 @@ const LoadSheetPage = () => {
   const handleGenerate = async () => {
     // Validation
     if (!filters.warehouse_id) {
-      setMessage({ type: 'error', text: '⚠️ Please select a warehouse' });
+      showToast('⚠️ Please select a warehouse', 'error');
       return;
     }
 
     if (!filters.from_date || !filters.to_date) {
-      setMessage({ type: 'error', text: '⚠️ Please select date range' });
+      showToast('⚠️ Please select date range', 'error');
       return;
     }
 
     try {
       setLoading(true);
-      setMessage({ type: '', text: '' });
       setShowPreview(false);
 
       console.log('🔄 Fetching deliveries with items...');
@@ -165,10 +157,7 @@ const LoadSheetPage = () => {
       console.log(`✅ Fetched ${fetchedDeliveries.length} deliveries:`, fetchedDeliveries);
 
       if (fetchedDeliveries.length === 0) {
-        setMessage({ 
-          type: 'info', 
-          text: `ℹ️ No ${filters.status || ''} deliveries found for selected date range` 
-        });
+        showToast(`ℹ️ No ${filters.status || ''} deliveries found for selected date range`, 'info');
         setDeliveries([]);
         setConsolidatedProducts([]);
         setShowPreview(false);
@@ -219,17 +208,11 @@ const LoadSheetPage = () => {
       setConsolidatedProducts(consolidated);
       setShowPreview(true);
 
-      setMessage({ 
-        type: 'success', 
-        text: `✅ Preview generated! ${fetchedDeliveries.length} deliveries, ${consolidated.length} products, ${totalItems} total items` 
-      });
+      showToast(`✅ Preview generated! ${fetchedDeliveries.length} deliveries, ${consolidated.length} products, ${totalItems} total items`, 'success');
 
     } catch (error) {
       console.error('❌ Error generating load sheet:', error);
-      setMessage({ 
-        type: 'error', 
-        text: `❌ Failed to generate: ${error.response?.data?.message || error.message}` 
-      });
+      showToast(`❌ Failed to generate: ${error.response?.data?.message || error.message}`, 'error');
     } finally {
       setLoading(false);
     }
@@ -238,7 +221,7 @@ const LoadSheetPage = () => {
   // SAVE LOAD SHEET
   const handleSave = async () => {
     if (consolidatedProducts.length === 0) {
-      setMessage({ type: 'error', text: '⚠️ No data to save. Generate preview first.' });
+      showToast('⚠️ No data to save. Generate preview first.', 'error');
       return;
     }
 
@@ -266,10 +249,7 @@ const LoadSheetPage = () => {
       console.log('💾 Saving load sheet:', loadSheetData);
       const response = await loadSheetService.createLoadSheet(loadSheetData, deliveryIds);
 
-      setMessage({ 
-        type: 'success', 
-        text: '✅ Load sheet saved successfully!' 
-      });
+      showToast('✅ Load sheet saved successfully!', 'success');
       
       // Reset preview
       setShowPreview(false);
@@ -282,10 +262,7 @@ const LoadSheetPage = () => {
 
     } catch (error) {
       console.error('❌ Error saving load sheet:', error);
-      setMessage({ 
-        type: 'error', 
-        text: `❌ Failed to save: ${error.response?.data?.message || error.message}` 
-      });
+      showToast(`❌ Failed to save: ${error.response?.data?.message || error.message}`, 'error');
     } finally {
       setLoading(false);
     }
@@ -294,7 +271,7 @@ const LoadSheetPage = () => {
   // EXPORT TO EXCEL (Sprint 8 requirement)
   const handleExportExcel = () => {
     if (consolidatedProducts.length === 0) {
-      setMessage({ type: 'error', text: '⚠️ No data to export. Generate preview first.' });
+      showToast('⚠️ No data to export. Generate preview first.', 'error');
       return;
     }
 

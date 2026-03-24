@@ -247,6 +247,13 @@ const ProductListPage = () => {
                 Bulk Import
               </button>
               <button
+                onClick={() => navigate('/products/add-stock')}
+                className="inline-flex items-center px-4 py-2 border border-green-600 text-sm font-medium rounded-md text-green-600 bg-white hover:bg-green-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+              >
+                <PlusIcon className="w-5 h-5 mr-2" />
+                Add Stock
+              </button>
+              <button
                 onClick={() => navigate('/products/add')}
                 className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
               >
