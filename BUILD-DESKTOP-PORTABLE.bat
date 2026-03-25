@@ -36,7 +36,7 @@ echo      Done!
 echo.
 echo [3/4] Creating portable executable...
 set CSC_IDENTITY_AUTO_DISCOVERY=false
-set ELECTRON_BUILDER_CACHE="%TEMP%\electron-builder-cache"
+set ELECTRON_BUILDER_CACHE=%TEMP%\electron-builder-cache
 
 REM Build portable version (no signing required)
 call npx electron-builder --win portable --config.directories.output=dist-standalone --config.win.signAndEditExecutable=false

@@ -43,8 +43,9 @@ echo.
 echo [4/4] Creating Windows installer...
 set CSC_IDENTITY_AUTO_DISCOVERY=false
 set ELECTRON_BUILDER_NO_NATIVE_REBUILD=true
+set ELECTRON_BUILDER_CACHE=%TEMP%\electron-builder-cache
 
-call npx electron-builder --win nsis --config.directories.output=dist-standalone
+call npx electron-builder --win nsis --config.directories.output=dist-standalone --config.win.signAndEditExecutable=false
 
 if errorlevel 1 (
     echo ERROR: Installer build failed
