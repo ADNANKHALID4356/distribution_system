@@ -294,9 +294,15 @@ exports.addStock = async (req, res) => {
       });
     }
 
-    const newStock = (existingProduct.stock_quantity || 0) + delta;
-
-    const updatedProduct = await Product.updateStock(id, newStock);
+    const updatedProduct = await Product.updateStock(
+      id,
+      delta,
+      'ADJUSTMENT',
+      'MANUAL_STOCK_ADD',
+      null,
+      `Manual stock added via desktop by ${req.user?.username || 'unknown user'}`,
+      req.user?.id || null
+    );
     res.json({
       success: true,
       message: 'Product stock updated successfully',

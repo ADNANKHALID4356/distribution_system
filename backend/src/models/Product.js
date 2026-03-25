@@ -16,7 +16,10 @@ const convertProductNumbers = (product) => {
     ...product,
     unit_price: product.unit_price ? parseFloat(product.unit_price) : 0,
     carton_price: product.carton_price ? parseFloat(product.carton_price) : 0,
-    purchase_price: product.purchase_price ? parseFloat(product.purchase_price) : 0
+    purchase_price: product.purchase_price ? parseFloat(product.purchase_price) : 0,
+    stock_quantity: product.stock_quantity ? parseFloat(product.stock_quantity) : 0,
+    reorder_level: product.reorder_level ? parseFloat(product.reorder_level) : 0,
+    reserved_stock: product.reserved_stock ? parseFloat(product.reserved_stock) : 0
   };
 };
 
@@ -449,8 +452,9 @@ const Product = {
       throw new Error('Product not found');
     }
     
-    const previousStock = product.stock_quantity;
-    const newStock = previousStock + quantity;
+    const previousStock = parseFloat(product.stock_quantity) || 0;
+    const numericQuantity = parseFloat(quantity) || 0;
+    const newStock = previousStock + numericQuantity;
     
     if (newStock < 0) {
       throw new Error('Insufficient stock');
@@ -465,7 +469,7 @@ const Product = {
         product_id, movement_type, quantity, previous_stock, new_stock,
         reference_type, reference_id, notes, created_by
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [id, movementType, quantity, previousStock, newStock, referenceType, referenceId, notes, userId]);
+    `, [id, movementType, numericQuantity, previousStock, newStock, referenceType, referenceId, notes, userId]);
     
     return await this.findById(id);
   },
