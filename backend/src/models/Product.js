@@ -463,10 +463,10 @@ const Product = {
     // Update product stock
     await db.query('UPDATE products SET stock_quantity = ? WHERE id = ?', [newStock, id]);
     
-    // Log stock movement
+    // Log stock movement (column names aligned with production schema)
     await db.query(`
       INSERT INTO stock_movements (
-        product_id, movement_type, quantity, previous_stock, new_stock,
+        product_id, movement_type, quantity, stock_before, stock_after,
         reference_type, reference_id, notes, created_by
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [id, movementType, numericQuantity, previousStock, newStock, referenceType, referenceId, notes, userId]);
