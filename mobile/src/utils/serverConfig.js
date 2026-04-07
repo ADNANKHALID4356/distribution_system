@@ -20,7 +20,7 @@ const SERVER_CONFIG_KEY = '@distribution_server_config';
 // Production server (VPS) - ACTIVE:
 const DEFAULT_CONFIG = {
   host: '147.93.108.205',  // VPS Production Server
-  port: '5001',            // Backend API port
+  port: '5005',            // Backend API port
   protocol: 'http'         // HTTP
 };
 

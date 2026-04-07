@@ -98,6 +98,8 @@
           ]
         }
       ],
+      "signAndEditExecutable": false,
+      "forceCodeSigning": false,
       "icon": "build/logo512.png",
       "artifactName": "${productName}-Setup-${version}.${ext}"
     },

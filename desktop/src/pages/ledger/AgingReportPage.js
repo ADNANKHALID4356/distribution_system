@@ -5,7 +5,7 @@
  * Company: Ummahtechinnovations.com
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ledgerService from '../../services/ledgerService';
 
@@ -28,12 +28,7 @@ const AgingReportPage = () => {
     days_over_90: 0
   });
 
-  // Load data on mount
-  useEffect(() => {
-    loadAgingAnalysis();
-  }, []);
-
-  const loadAgingAnalysis = async () => {
+  const loadAgingAnalysis = useCallback(async () => {
     try {
       setLoading(true);
       setError('');
@@ -50,7 +45,12 @@ const AgingReportPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  // Load data on mount
+  useEffect(() => {
+    loadAgingAnalysis();
+  }, [loadAgingAnalysis]);
 
   const calculateSummary = (data) => {
     const totals = data.reduce((acc, shop) => ({

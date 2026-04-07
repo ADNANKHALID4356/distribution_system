@@ -6,7 +6,7 @@ import { useToast } from '../context/ToastContext';
 
 const ServerConfigScreen = ({ navigation }) => {
   const { showToast } = useToast();
-  // Use production defaults as initial state (VPS: 147.93.108.205:5001)
+  // Use production defaults as initial state (VPS: 147.93.108.205:5005)
   const [config, setConfig] = useState(getDefaultConfig());
   const [loading, setLoading] = useState(true);
   const [testing, setTesting] = useState(false);
@@ -134,7 +134,7 @@ const ServerConfigScreen = ({ navigation }) => {
               keyboardType="numeric"
             />
             <HelperText type="info">
-              Default is 5000
+              Default is 5005
             </HelperText>
 
             <View style={styles.urlPreview}>

@@ -4,6 +4,9 @@ import './index.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
 import ErrorBoundary from './components/ErrorBoundary';
+import { initServerConfig } from './utils/serverConfig';
+
+initServerConfig();
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(

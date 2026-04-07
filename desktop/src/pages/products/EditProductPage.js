@@ -74,7 +74,7 @@ const EditProductPage = () => {
       }
     };
     fetchData();
-  }, [id]);
+  }, [id, showToast]);
 
   // Handle input change
   const handleChange = (e) => {

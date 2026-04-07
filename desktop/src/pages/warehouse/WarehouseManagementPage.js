@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { 
   Warehouse, Package, 
   Plus, Edit, Trash2, Eye, Search, ArrowLeft, MapPin,
-  Phone, Box, PackagePlus, X, RefreshCw, PackageMinus
+  Phone, Box, PackagePlus, X, RefreshCw
 } from 'lucide-react';
 import warehouseService from '../../services/warehouseService';
 

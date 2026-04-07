@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { getServerUrl, getServerConfig } from '../utils/serverConfig';
+import { getServerUrl } from '../utils/serverConfig';
 
 // Get initial URL from serverConfig (single source of truth)
 const initialUrl = getServerUrl();

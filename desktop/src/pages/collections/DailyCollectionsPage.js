@@ -10,8 +10,6 @@ import {
   TrashIcon,
   BanknotesIcon,
   CalendarDaysIcon,
-  XCircleIcon,
-  CheckCircleIcon,
 } from '@heroicons/react/24/outline';
 
 const DailyCollectionsPage = () => {
@@ -61,7 +59,7 @@ const DailyCollectionsPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [startDate, endDate]);
+  }, [startDate, endDate, showToast]);
 
   useEffect(() => {
     fetchData();

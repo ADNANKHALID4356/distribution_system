@@ -15,7 +15,7 @@ const CONFIG_VERSION_KEY = 'serverConfigVersion';
  * Increment this value to force-reset all clients to the new default config.
  * Useful when switching environments (e.g. local → production).
  */
-const CURRENT_CONFIG_VERSION = 8;
+const CURRENT_CONFIG_VERSION = 9;
 
 /** Timeout in milliseconds for server connection tests. */
 const CONNECTION_TIMEOUT_MS = 5000;
@@ -30,7 +30,7 @@ const CONNECTION_TIMEOUT_MS = 5000;
 /** @type {{ host: string, port: string, protocol: 'http' | 'https' }} */
 const DEFAULT_CONFIG = {
   host: '147.93.108.205', // VPS Production Server
-  port: '5001',           // Backend API port
+  port: '5005',           // Backend API port
   protocol: 'http',       // Use 'https' if SSL is configured
 };
 

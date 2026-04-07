@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useToast } from '../../context/ToastContext';
 import { useNavigate } from 'react-router-dom';
 import routeService from '../../services/routeService';
@@ -17,11 +17,7 @@ const RouteManagementPage = () => {
     is_active: true
   });
 
-  useEffect(() => {
-    fetchRoutes();
-  }, []);
-
-  const fetchRoutes = async () => {
+  const fetchRoutes = useCallback(async () => {
     try {
       setLoading(true);
       const response = await routeService.getAllRoutes({ limit: 100 });
@@ -32,7 +28,11 @@ const RouteManagementPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [showToast]);
+
+  useEffect(() => {
+    fetchRoutes();
+  }, [fetchRoutes]);
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;

@@ -14,8 +14,7 @@ import {
   InputLabel,
   Select,
   MenuItem,
-  Paper,
-  IconButton
+  Paper
 } from '@mui/material';
 import {
   Settings as SettingsIcon,
@@ -26,8 +25,7 @@ import {
 import {
   getServerConfig,
   setServerConfig,
-  testServerConnection,
-  getServerUrl
+  testServerConnection
 } from '../utils/serverConfig';
 
 const ServerConfigDialog = ({ open, onClose, onConfigured }) => {

@@ -13,7 +13,6 @@ import {
 import deliveryService from '../../services/deliveryService';
 import warehouseService from '../../services/warehouseService';
 import settingsService from '../../services/settingsService';
-import { printChallan, downloadChallan } from '../../utils/pdfGeneratorNew';
 
 const DeliveryTrackingPage = () => {
   const { showToast } = useToast();
@@ -662,8 +661,6 @@ const DeliveryTrackingPage = () => {
       let forceDelete = false;
       
       if (completedDeliveries.length > 0) {
-        const confirmMsg = `⚠️ ADMIN OVERRIDE REQUIRED - You are about to delete ${completedDeliveries.length} COMPLETED delivery/deliveries. This may affect business records and delivery history.`;
-        
         // Show a modal-based confirmation dialog instead of window.confirm
         // For now, we'll proceed without the confirm since the user selected to delete
         forceDelete = true;

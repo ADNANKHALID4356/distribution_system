@@ -578,7 +578,7 @@ const OrderManagementPage = () => {
           }
           
           /* Status badges in print */
-          .print\:inline-block {
+          .print\\:inline-block {
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
           }
